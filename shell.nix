@@ -1,5 +1,2 @@
-let pkgs = import ./nix {};
-in pkgs.mkShell
-  { buildInputs = [ pkgs.nodejs-10_x ];
-  }
-
+{ pkgs ? import ./nix {} }:
+(import ./default.nix).servant-npm-devshell

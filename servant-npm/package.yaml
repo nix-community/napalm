@@ -1,0 +1,21 @@
+name: servant-npm
+
+dependencies:
+    - aeson
+    - base
+    - base16-bytestring
+    - bytestring
+    - cryptohash
+    - hashable
+    - servant
+    - servant-server
+    - tar
+    - text
+    - time
+    - unordered-containers
+    - uri-encode
+    - warp
+    - zlib
+
+executable:
+    main: Main.hs
