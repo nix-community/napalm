@@ -12,15 +12,15 @@
     },
     "cli": {
         "homepage": "https://www.netlify.com/docs/cli",
-        "url": "https://github.com/netlify/cli/archive/a521bb124184a535f31f34e47edfdc227a42ac9e.tar.gz",
+        "url": "https://github.com/netlify/cli/archive/18f15ff09d16622357b4ab2c79078366b912a425.tar.gz",
         "owner": "netlify",
         "branch": "master",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
         "repo": "cli",
         "type": "tarball",
-        "sha256": "0rrf4sik76dfvwk8n6z5xgff976jsqwafqwczb4fxq0m0z7vf6k8",
+        "sha256": "0rl5ib7l9irdan19ycsapcl8i06y9i6j9qk7vl3m6gzxlhi1kzkw",
         "description": "Netlify command line tool",
-        "rev": "a521bb124184a535f31f34e47edfdc227a42ac9e"
+        "rev": "18f15ff09d16622357b4ab2c79078366b912a425"
     },
     "niv": {
         "homepage": "https://github.com/nmattia/niv",

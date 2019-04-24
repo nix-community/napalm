@@ -13,8 +13,8 @@ let
           else abort "Unknown sha for ${v.integrity}";
       in
         (builtins.removeAttrs v ["resolved"]) //
-        (if builtins.isString v.resolved then
-        { version = "file://${pkgs.fetchurl ({ url = pkgs.lib.traceVal v.resolved; } // sha)}"; }
+        (if builtins.hasAttr "resolved" v && builtins.isString v.resolved then
+        { version = "file://${pkgs.fetchurl ({ url = v.resolved; } // sha)}"; }
         else {} )//
         (if builtins.hasAttr "dependencies" v
           then { dependencies = updateDependencies v.dependencies; }
@@ -66,7 +66,7 @@ let
         mkNode = name: obj:
           { inherit name;
             key = mkPackageKey name obj.version;
-            doBuild = builtins.isString obj.resolved;
+            doBuild = builtins.hasAttr "resolved" obj && builtins.isString obj.resolved;
             src =
               let
                 sha =
@@ -115,7 +115,7 @@ let
               oldPackageLockNix //
               { dependencies = updateDependencies oldPackageLockNix.dependencies; }
             else oldPackageLockNix;
-          newPackageLockJson = builtins.toJSON (builtins.trace  newPackageLockNix.dependencies newPackageLockNix);
+          newPackageLockJson = builtins.toJSON newPackageLockNix;
         in pkgs.writeText "package-lock-json" newPackageLockJson;
 
       newPackageJson =
@@ -140,11 +140,11 @@ let
           mkdir -p $out
           cp -r ${src}/* $out
           ls $out
-          rm $out/package.json || echo "No package.json"
-          rm $out/package-lock.json || echo "No package-lock.json"
-          rm $out/npm-shrinkwrap.json || echo "No shrinkwrap.json"
-          cp ${newPackageLock} $out/package-lock.json
-          cp ${newPackageJson} $out/package.json
+          #rm $out/package.json || echo "No package.json"
+          #rm $out/package-lock.json || echo "No package-lock.json"
+          #rm $out/npm-shrinkwrap.json || echo "No shrinkwrap.json"
+          #cp ${newPackageLock} $out/package-lock.json
+          #cp ${newPackageJson} $out/package.json
         '';
 
       dependencies =
@@ -156,14 +156,14 @@ let
                     builtins.hasAttr x.name y.dependencies &&
                     y.dependencies.${x.name}.version == x.version)
                 )
-                (readDependenciesPackageLock patchedSource packageLock);
+                (readDependenciesPackageLock src packageLock);
         in
         if builtins.hasAttr "cycle" toposorted
         then abort "Cycle, sorry: ${builtins.toString (map (x: x.key) toposorted.cycle)}"
         else map (x: x.src) toposorted.result;
 
       npm_deps = pkgs.writeText "npm_dependencies"
-        (pkgs.lib.concatStringsSep "\n" dependencies);
+        (pkgs.lib.concatStringsSep "\n" (pkgs.lib.filter (x: ! pkgs.lib.hasPrefix "fsevents" x) dependencies));
 
     in
       pkgs.runCommand "build-npm-package"
@@ -171,9 +171,21 @@ let
     }
     ''
       mkdir -p $out
-      export PATH=$out/node_modules/.bin:$PATH
 
-      npm install --prefix $out $(npm pack ${patchedSource} | tail -1)
+      mkdir -p ~/npm-global
+
+      npm config set prefix '~/npm-global'
+      npm config set cache-min 9999999
+
+      export PATH=~/npm-global/bin:$PATH
+
+      cat ${npm_deps} | npm install --offline `xargs`
+      #cat ${npm_deps} | while IFS= read -r npm_dep || [[ -n "$npm_dep" ]]; do
+        #echo INSTALLING $npm_dep
+        #npm install --verbose --offline -g $npm_dep
+      #done
+
+      #npm install --prefix $out $(npm pack ${patchedSource} | tail -1)
 
       cat ${patchedSource}/package.json | jq '.'
 
