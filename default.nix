@@ -59,7 +59,7 @@ with rec
     else if hasNpmShrinkwrap then "${src}/npm-shrinkwrap.json"
     else null;
 
-  buildPackage = src: { packageLock ? null }:
+  buildPackage = src: attrs@{ packageLock ? null, ... }:
     with rec
     { actualPackageLock =
         if ! isNull packageLock then packageLock
@@ -76,10 +76,15 @@ with rec
       discoveredPackageLock = findPackageLock src;
       snapshot = pkgs.writeText "npm-snapshot"
         (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
+      buildInputs = [ pkgs.nodejs-10_x pkgs.jq haskellPackages.servant-npm pkgs.fswatch pkgs.gcc ];
+      runCommandAttrs =
+        let newBuildInputs =
+          if builtins.hasAttr "buildInputs" attrs
+            then attrs.buildInputs ++ buildInputs
+          else buildInputs;
+        in attrs // { buildInputs = newBuildInputs; } ;
     };
-    pkgs.runCommand "build-npm-package"
-    { buildInputs = [ pkgs.nodejs-10_x pkgs.jq haskellPackages.servant-npm];
-    }
+    pkgs.runCommand "build-npm-package" runCommandAttrs
     ''
       servant-npm ${snapshot} &
 
@@ -90,7 +95,17 @@ with rec
 
       cp -r ${src}/* .
 
-      npm install
+      export CPATH="${pkgs.nodejs-10_x}/include/node:$CPATH"
+
+      # Extremely sad workaround to make sure the scripts are patched before
+      # npm tried to use them
+      fswatch -0 -r node_modules | \
+        while read -d "" event
+        do
+          [ -x "$event" ] && patchShebangs $event 2>&1 > /dev/null || true
+        done &
+
+      npm install --nodedir=${pkgs.nodejs-10_x}/include/node
 
       cd $out
 
