@@ -58,7 +58,7 @@ servePackageMetadata :: Snapshot -> PackageName -> Servant.Handler PackageMetada
 servePackageMetadata (unSnapshot -> ss) pn = do
     liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
     pvs <- maybe
-      (error "No such package")
+      (error $ "No such package: " <> T.unpack (unPackageName pn))
       pure
       (HMS.lookup pn ss)
 

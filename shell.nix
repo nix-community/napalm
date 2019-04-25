@@ -1,2 +1,2 @@
 { pkgs ? import ./nix {} }:
-(import ./default.nix).servant-npm-devshell
+(import ./default.nix { inherit pkgs; } ).servant-npm-devshell

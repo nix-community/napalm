@@ -1,28 +1,8 @@
+{ pkgs ? import ./nix {}
+, sources ? pkgs.sources or (abort "Please provide a niv-style sources")
+}:
 with rec
 {
-  pkgs = import ./nix {};
-  sources = pkgs.sources;
-
-  #updateDependencies =
-    #pkgs.lib.mapAttrs (k: v:
-      #let
-        #sha =
-          #if pkgs.lib.hasPrefix "sha1-" v.integrity
-          #then { sha1 = pkgs.lib.removePrefix "sha1-" v.integrity; } else
-          #if pkgs.lib.hasPrefix "sha512-" v.integrity
-          #then { sha512 = pkgs.lib.removePrefix "sha512-" v.integrity; }
-          #else abort "Unknown sha for ${v.integrity}";
-      #in
-        #(builtins.removeAttrs v ["resolved"]) //
-        #(if builtins.hasAttr "resolved" v && builtins.isString v.resolved then
-        #{ version = "file://${pkgs.fetchurl ({ url = v.resolved; } // sha)}"; }
-        #else {} )//
-        #(if builtins.hasAttr "dependencies" v
-          #then { dependencies = updateDependencies v.dependencies; }
-          #else {}
-        #)
-        #);
-
   snapshotFromPackageLockJson = packageLockJson:
     with rec
       { packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
@@ -32,7 +12,9 @@ with rec
               then
                 "${name}-${obj.version}-${obj.integrity}"
               else
-                "${name}-${obj.version}-no-integrity" # XXX: tricky AF
+                # XXX: tricky AF
+                # TODO: explain why
+                "${name}-${obj.version}-no-integrity"
                 ;
             inherit name obj;
             inherit (obj) version;
@@ -42,7 +24,7 @@ with rec
               else [];
           };
         flattened = builtins.genericClosure
-          { startSet = pkgs.lib.mapAttrsToList mkNode packageLock.dependencies;
+          { startSet = [(mkNode packageLock.name packageLock)] ;
             operator = x: x.next;
           };
         snapshotEntry = x:
@@ -67,157 +49,68 @@ with rec
       (pkgs.lib.recursiveUpdate acc (snapshotEntry x))
     ) {} flattened;
 
-  # https://docs.npmjs.com/files/package-lock.json#dependencies
-  readDependenciesPackageLock = src: packageLock:
+  findPackageLock = src:
     with rec
-      { mkPackageKey = name: version: "${name}-${version}";
-        mkNode = name: obj:
-          { inherit name;
-            key = mkPackageKey name obj.version;
-            doBuild = builtins.hasAttr "resolved" obj && builtins.isString obj.resolved;
-            src =
-              let
-                sha =
-                  if pkgs.lib.hasPrefix "sha1-" obj.integrity
-                  then { sha1 = pkgs.lib.removePrefix "sha1-" obj.integrity; } else
-                  if pkgs.lib.hasPrefix "sha512-" obj.integrity
-                  then { sha512 = pkgs.lib.removePrefix "sha512-" obj.integrity; }
-                  else abort "Unknown sha for ${obj.integrity}";
-
-              in pkgs.fetchurl
-              ({ url = obj.resolved; } // sha) ;
-          } // obj;
-        mkNodeFromPackageJson = src: packageJson:
-          let
-            obj = builtins.fromJSON (builtins.readFile packageJson);
-            name = obj.name;
-            version = obj.version;
-          in builtins.removeAttrs ({ inherit src; key = mkPackageKey name obj.version; } // obj) [ "requires" ];
-        getDeps = obj:
-          if builtins.hasAttr "dependencies" obj
-          then pkgs.lib.filter (x: x.doBuild) (pkgs.lib.mapAttrsToList mkNode obj.dependencies)
-          else [];
+      { toplevel = builtins.readDir src;
+        hasPackageLock = builtins.hasAttr "package-lock.json" toplevel;
+        hasNpmShrinkwrap = builtins.hasAttr "npm-shrinkwrap.json" toplevel;
       };
-    builtins.genericClosure
-      { startSet = [ (mkNodeFromPackageJson src packageLock) ];
-        operator = getDeps;
-      };
+    if hasPackageLock then "${src}/package-lock.json"
+    else if hasNpmShrinkwrap then "${src}/npm-shrinkwrap.json"
+    else null;
 
-  readDependencies = src: readDependenciesPackageLock src "${src}/package-lock.json";
+  buildPackage = src: { packageLock ? null }:
+    with rec
+    { actualPackageLock =
+        if ! isNull packageLock then packageLock
+        else if ! isNull discoveredPackageLock then discoveredPackageLock
+        else abort
+          ''
+            Could not find a suitable package-lock in ${src}.
 
-  updateDependency = snapshot: name: pat:
-    let
-      topVer = pkgs.lib.head (pkgs.lib.sort (x: y: x > y) (builtins.attrNames snapshot.${name}));
-    in "file://${snapshot.${name}.${topVer}}";
-
-  buildNPMPackage = src: { packageLock ? "${src}/package-lock.json" }:
-    let
-
-      #newPackageLock =
-        #let
-          #oldPackageLockJson = builtins.readFile packageLock;
-          #oldPackageLockNix = builtins.fromJSON oldPackageLockJson;
-          ##newPackageLockNix =
-            ##if builtins.hasAttr "dependencies" oldPackageLockNix
-            ##then
-              ##oldPackageLockNix //
-              ##{ dependencies = updateDependencies oldPackageLockNix.dependencies; }
-            ##else oldPackageLockNix;
-          ##newPackageLockJson = builtins.toJSON newPackageLockNix;
-        #in pkgs.writeText "package-lock-json" newPackageLockJson;
-
-      #newPackageJson =
-        #let
-          #oldPackageJsonJson = builtins.readFile "${src}/package.json";
-          #oldPackageJsonNix = builtins.fromJSON oldPackageJsonJson;
-          #newPackageJsonNix =
-            #if builtins.hasAttr "dependencies" oldPackageJsonNix
-            #then
-              #oldPackageJsonNix //
-              #{ dependencies =
-                  #builtins.mapAttrs
-                    #(k: v: updateDependency (snapshotFromPackageLockJson packageLock) k v ) oldPackageJsonNix.dependencies; } //
-              #{ devDependencies =
-                  #builtins.mapAttrs
-                    #(k: v: updateDependency (snapshotFromPackageLockJson packageLock) k v ) oldPackageJsonNix.devDependencies; }
-            #else oldPackageJsonNix;
-          #newPackageJsonJson = builtins.toJSON newPackageJsonNix;
-        #in pkgs.writeText "package-json" newPackageJsonJson;
-      patchedSource = pkgs.runCommand "patch-package-lock" {}
-        ''
-          mkdir -p $out
-          cp -r ${src}/* $out
-          ls $out
-          #rm $out/package.json || echo "No package.json"
-          #rm $out/package-lock.json || echo "No package-lock.json"
-          #rm $out/npm-shrinkwrap.json || echo "No shrinkwrap.json"
-        '';
-
-      dependencies =
-        let toposorted =
-              pkgs.lib.toposort
-                (x: y:
-                  (builtins.hasAttr "requires" y && builtins.hasAttr x.name y.requires) ||
-                  (builtins.hasAttr "dependencies" y &&
-                    builtins.hasAttr x.name y.dependencies &&
-                    y.dependencies.${x.name}.version == x.version)
-                )
-                (readDependenciesPackageLock src packageLock);
-        in
-        if builtins.hasAttr "cycle" toposorted
-        then abort "Cycle, sorry: ${builtins.toString (map (x: x.key) toposorted.cycle)}"
-        else map (x: x.src) toposorted.result;
-
-      npm_deps = pkgs.writeText "npm_dependencies"
-        (pkgs.lib.concatStringsSep "\n" dependencies);
-
-      snapshot = pkgs.writeText "foo" (builtins.toJSON (snapshotFromPackageLockJson packageLock));
-
-
-    in
-      pkgs.runCommand "build-npm-package"
+            If you specify a 'packageLock' to 'buildPackage', I will use that.
+            Otherwise, if there is a file 'package-lock.json' in ${src}, I will use that.
+            Otherwise, if there is a file 'npm-shrinkwrap.json' in ${src}, I will use that.
+            Otherwise, you will see this error message.
+          '';
+      discoveredPackageLock = findPackageLock src;
+      snapshot = pkgs.writeText "npm-snapshot"
+        (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
+    };
+    pkgs.runCommand "build-npm-package"
     { buildInputs = [ pkgs.nodejs-10_x pkgs.jq haskellPackages.servant-npm];
     }
     ''
       servant-npm ${snapshot} &
 
-      #mkdir -p $out/_napalm_install
-      #mkdir -p "$out/_napalm_npm-global"
-
-      #npm config set prefix "$out/_napalm_npm-global"
       npm config set registry 'http://localhost:8081'
-
-      #export PATH=$out/_napalm_npm-global/bin:$PATH
-
-      #cd $out/_napalm_install
 
       mkdir -p $out/_napalm-install
       cd $out/_napalm-install
 
-      cp -r ${patchedSource}/* .
+      cp -r ${src}/* .
 
       npm install
 
-      cat package.json | jq -r '.bin | .[]' | \
+      cd $out
+
+      cat _napalm-install/package.json | jq -r '.bin | .[]' | \
         while IFS= read -r bin; do
-          chmod +w $(dirname $bin)
-          patchShebangs $bin
+          # https://github.com/NixOS/nixpkgs/pull/60215
+          chmod +w $(dirname "_napalm-install/$bin")
+          patchShebangs _napalm-install/$bin
         done
 
-
-      cd ..
       mkdir -p bin
+
       cat _napalm-install/package.json | jq -r '.bin | keys[]' | \
         while IFS= read -r key; do
-          echo $key
           target=$(cat _napalm-install/package.json | jq -r --arg key "$key" '.bin[$key]')
-          echo $target
+          echo creating symlink for npm executable $key to $target
           ln -s ../_napalm-install/$target bin/$key
         done
     '';
 
-  hello-world = buildNPMPackage ./test/hello-world {};
-  hello-world-deps = buildNPMPackage ./test/hello-world-deps {};
   servant-npm-source = pkgs.lib.cleanSource ./servant-npm;
   haskellPackages = pkgs.haskellPackages.override
     { overrides = _: haskellPackages:
@@ -243,22 +136,21 @@ with rec
 { hello-world =
     pkgs.runCommand "hello-world-test" {}
       ''
-        ${hello-world}/bin/say-hello > $out
+        ${buildPackage ./test/hello-world {}}/bin/say-hello
+        touch $out
       '';
   hello-world-deps =
     pkgs.runCommand "hello-world-deps-test" {}
       ''
-        ${hello-world-deps}/bin/say-hello > $out
+        ${buildPackage ./test/hello-world-deps {}}/bin/say-hello
+        touch $out
       '';
   netlify-cli =
     pkgs.runCommand "netlify-cli-test" {}
       ''
-        ${buildNPMPackage sources.cli { packageLock = "${sources.cli}/npm-shrinkwrap.json"; }}/bin/netlify --help
+        ${buildPackage sources.cli {}}/bin/netlify --help
         touch $out
       '';
 
-  snapshot = pkgs.writeText "foo" (builtins.toJSON (snapshotFromPackageLockJson "${sources.cli}/npm-shrinkwrap.json"));
-
-
-  inherit snapshotFromPackageLockJson servant-npm-devshell;
+  inherit buildPackage snapshotFromPackageLockJson servant-npm-devshell;
 }
