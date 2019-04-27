@@ -37,7 +37,7 @@ import qualified Servant as Servant
 
 data Config = Config
   { _configVerbose :: Bool
-  , _configEndpoint :: T.Text
+  , configEndpoint :: T.Text
   , _configPort :: Int
   , configSnapshot :: FilePath
   }
@@ -49,7 +49,7 @@ main = do
     snapshot <- Aeson.decodeFileStrict (configSnapshot config) >>= \case
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
-    Warp.run 8081 (Servant.serve api (server snapshot))
+    Warp.run 8081 (Servant.serve api (server config snapshot))
 
 parseConfig :: Opts.Parser Config
 parseConfig = Config <$>
@@ -73,14 +73,14 @@ parseConfig = Config <$>
 api :: Proxy API
 api = Proxy
 
-server :: Snapshot -> Servant.Server API
-server ss =
-  servePackageMetadata ss :<|>
-  servePackageVersionMetadata ss :<|>
+server :: Config -> Snapshot -> Servant.Server API
+server config ss =
+  servePackageMetadata config ss :<|>
+  servePackageVersionMetadata config ss :<|>
   serveTarball ss
 
-servePackageMetadata :: Snapshot -> PackageName -> Servant.Handler PackageMetadata
-servePackageMetadata (unSnapshot -> ss) pn = do
+servePackageMetadata :: Config -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
+servePackageMetadata config (unSnapshot -> ss) pn = do
     liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
     pvs <- maybe
       (error $ "No such package: " <> T.unpack (unPackageName pn))
@@ -88,16 +88,17 @@ servePackageMetadata (unSnapshot -> ss) pn = do
       (HMS.lookup pn ss)
 
     pvs' <- forM (HMS.toList pvs)  $ \(pv, tarPath) ->
-      (pv,) <$> liftIO (mkPackageVersionMetadata pn pv tarPath)
+      (pv,) <$> liftIO (mkPackageVersionMetadata config pn pv tarPath)
 
     pure $ mkPackageMetadata pn (HMS.fromList pvs')
 
 servePackageVersionMetadata
-  :: Snapshot
+  :: Config
+  -> Snapshot
   -> PackageName
   -> PackageVersion
   -> Servant.Handler PackageVersionMetadata
-servePackageVersionMetadata ss pn pv = do
+servePackageVersionMetadata config ss pn pv = do
     liftIO $ T.putStrLn $ "Requesting package version info for " <> unPackageName pn <> "@" <> unPackageVersion pv
 
     tarPath <- maybe
@@ -105,7 +106,7 @@ servePackageVersionMetadata ss pn pv = do
       pure
       (getTarPath ss pn pv)
 
-    liftIO $ mkPackageVersionMetadata pn pv tarPath
+    liftIO $ mkPackageVersionMetadata config pn pv tarPath
 
 getTarPath :: Snapshot -> PackageName -> PackageVersion -> Maybe FilePath
 getTarPath (unSnapshot -> ss) pn pv = do
@@ -203,13 +204,18 @@ sha1sum fp = hash <$> BS.readFile fp
   where
     hash = T.decodeUtf8 . Base16.encode . SHA1.hash
 
-mkPackageVersionMetadata :: PackageName -> PackageVersion -> FilePath -> IO PackageVersionMetadata
-mkPackageVersionMetadata pn pv tarPath = do
+mkPackageVersionMetadata
+  :: Config
+  -> PackageName
+  -> PackageVersion
+  -> FilePath
+  -> IO PackageVersionMetadata
+mkPackageVersionMetadata config pn pv tarPath = do
     shasum <- sha1sum tarPath :: IO T.Text
 
     let
       tarName = toTarballName pn pv
-      tarURL = mkTarballURL pn tarName
+      tarURL = mkTarballURL config pn tarName
       dist = Aeson.object
         [ "shasum" .= shasum
         , "tarball" .= tarURL
@@ -221,11 +227,12 @@ mkPackageVersionMetadata pn pv tarPath = do
       Aeson.Object $
       HMS.singleton "dist" dist <> packageJson
 
-mkTarballURL :: PackageName -> TarballName -> T.Text
+mkTarballURL :: Config -> PackageName -> TarballName -> T.Text
 mkTarballURL
+  config
   (URI.encodeText . unPackageName -> pn)
   (URI.encodeText . unTarballName -> tarName)
-  = "http://" <> T.intercalate "/" [ "localhost:8081", pn, "-", tarName ]
+  = "http://" <> T.intercalate "/" [ configEndpoint config <> ":" <> "8081", pn, "-", tarName ]
 
 readPackageJson :: FilePath -> IO Aeson.Object
 readPackageJson fp = do
