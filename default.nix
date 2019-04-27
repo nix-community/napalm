@@ -93,10 +93,12 @@ with rec
     };
     pkgs.runCommand "build-npm-package" runCommandAttrs
     ''
+      echo "Starting napalm registry"
+
       napalm-registry --snapshot ${snapshot} &
 
       while ! nc -z localhost 8081; do
-        echo waiting for port 8081
+        echo waiting for registry to be alive on port 8081
         sleep 1
       done
 
@@ -115,9 +117,13 @@ with rec
         while read -d "" event
         do
           [ -x "$event" ] && patchShebangs $event 2>&1 > /dev/null || true
-        done &
+        done 2>&1 > /dev/null &
+
+      echo "Installing npm package"
 
       npm install --nodedir=${pkgs.nodejs-10_x}/include/node
+
+      echo "Patching package executables"
 
       cd $out
 

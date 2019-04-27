@@ -36,7 +36,7 @@ import qualified Network.Wai.Handler.Warp as Warp
 import qualified Servant as Servant
 
 data Config = Config
-  { _configVerbose :: Bool
+  { configVerbose :: Bool
   , configEndpoint :: T.Text
   , configPort :: Int
   , configSnapshot :: FilePath
@@ -77,11 +77,12 @@ server :: Config -> Snapshot -> Servant.Server API
 server config ss =
   servePackageMetadata config ss :<|>
   servePackageVersionMetadata config ss :<|>
-  serveTarball ss
+  serveTarball config ss
 
 servePackageMetadata :: Config -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
 servePackageMetadata config (unSnapshot -> ss) pn = do
-    liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
+    when (configVerbose config) $
+      liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
     pvs <- maybe
       (error $ "No such package: " <> T.unpack (unPackageName pn))
       pure
@@ -99,7 +100,11 @@ servePackageVersionMetadata
   -> PackageVersion
   -> Servant.Handler PackageVersionMetadata
 servePackageVersionMetadata config ss pn pv = do
-    liftIO $ T.putStrLn $ "Requesting package version info for " <> unPackageName pn <> "@" <> unPackageVersion pv
+    when (configVerbose config) $
+      liftIO $ T.putStrLn $ T.unwords
+        [ "Requesting package version info for"
+        , unPackageName pn <> "@" <> unPackageVersion pv
+        ]
 
     tarPath <- maybe
       (error "No such tarball")
@@ -114,9 +119,14 @@ getTarPath (unSnapshot -> ss) pn pv = do
     tarPath <- HMS.lookup pv pvs
     pure $ tarPath
 
-serveTarball :: Snapshot -> PackageName -> TarballName -> Servant.Handler Tarball
-serveTarball ss pn tarName = do
-    liftIO $ T.putStrLn $ "Requesting tarball for " <> unPackageName pn <> ": " <> unTarballName tarName
+serveTarball :: Config -> Snapshot -> PackageName -> TarballName -> Servant.Handler Tarball
+serveTarball config ss pn tarName = do
+    when (configVerbose config) $
+      liftIO $ T.putStrLn $ T.unwords
+        [ "Requesting tarball for"
+        , unPackageName pn <> ":"
+        , unTarballName tarName
+        ]
 
     (pn', pv) <- maybe
       (error "Could not read tar name")
