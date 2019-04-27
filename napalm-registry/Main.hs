@@ -35,6 +35,7 @@ import qualified Network.URI.Encode as URI
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Servant as Servant
 
+-- | See 'parseConfig' for field descriptions
 data Config = Config
   { configVerbose :: Bool
   , configEndpoint :: T.Text
@@ -60,14 +61,25 @@ parseConfig = Config <$>
     ) <*>
     Opts.strOption (
       Opts.long "endpoint" <>
-      Opts.value "localhost"
+      Opts.value "localhost" <>
+      Opts.help "The endpoint of this server, used in the Tarball URL"
     ) <*>
     Opts.option Opts.auto (
       Opts.long "port" <>
-      Opts.value 8081
+      Opts.value 8081 <>
+      Opts.help "The to serve on, also used in the Tarball URL"
     ) <*>
     Opts.strOption (
-      Opts.long "snapshot"
+      Opts.long "snapshot" <>
+      Opts.help (unwords
+        [ "Path to the snapshot file."
+        , "The snapshot is a JSON file. The top-level keys are the package"
+        , "names. The top-level values are objects mapping from version to the"
+        , "path of the package tarball."
+        , "Example:"
+        , "{ \"lodash\": { \"1.0.0\": \"/path/to/lodash-1.0.0.tgz\" } }"
+        ]
+      )
     )
 
 api :: Proxy API
@@ -189,11 +201,13 @@ mkPackageMetadata
   -> PackageMetadata
 mkPackageMetadata pn pvs = PackageMetadata
     { packageDistTags = HMS.singleton "latest" latestVersion
+    -- This is a dummy date
     , packageModified = UTCTime (ModifiedJulianDay 0) 0
     , packageName = pn
     , packageVersions = pvs
     }
   where
+    -- XXX: fails if not versions are specified
     latestVersion = maximum (HMS.keys pvs)
 
 instance Aeson.ToJSON PackageMetadata where
