@@ -38,7 +38,7 @@ import qualified Servant as Servant
 data Config = Config
   { _configVerbose :: Bool
   , configEndpoint :: T.Text
-  , _configPort :: Int
+  , configPort :: Int
   , configSnapshot :: FilePath
   }
 
@@ -49,7 +49,7 @@ main = do
     snapshot <- Aeson.decodeFileStrict (configSnapshot config) >>= \case
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
-    Warp.run 8081 (Servant.serve api (server config snapshot))
+    Warp.run (configPort config) (Servant.serve api (server config snapshot))
 
 parseConfig :: Opts.Parser Config
 parseConfig = Config <$>
@@ -232,7 +232,11 @@ mkTarballURL
   config
   (URI.encodeText . unPackageName -> pn)
   (URI.encodeText . unTarballName -> tarName)
-  = "http://" <> T.intercalate "/" [ configEndpoint config <> ":" <> "8081", pn, "-", tarName ]
+  = "http://" <>
+    T.intercalate "/"
+      [ configEndpoint config <> ":" <> tshow (configPort config), pn, "-", tarName ]
+  where
+    tshow = T.pack . show
 
 readPackageJson :: FilePath -> IO Aeson.Object
 readPackageJson fp = do

@@ -76,7 +76,14 @@ with rec
       discoveredPackageLock = findPackageLock src;
       snapshot = pkgs.writeText "npm-snapshot"
         (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
-      buildInputs = [ pkgs.nodejs-10_x pkgs.jq haskellPackages.napalm-registry pkgs.fswatch pkgs.gcc ];
+      buildInputs =
+        [ pkgs.nodejs-10_x
+          haskellPackages.napalm-registry
+          pkgs.fswatch
+          pkgs.gcc
+          pkgs.jq
+          pkgs.netcat
+        ];
       runCommandAttrs =
         let newBuildInputs =
           if builtins.hasAttr "buildInputs" attrs
@@ -87,6 +94,11 @@ with rec
     pkgs.runCommand "build-npm-package" runCommandAttrs
     ''
       napalm-registry --snapshot ${snapshot} &
+
+      while ! nc -z localhost 8081; do
+        echo waiting for port 8081
+        sleep 1
+      done
 
       npm config set registry 'http://localhost:8081'
 
