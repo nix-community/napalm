@@ -1,21 +1,37 @@
+# The napalm nix support for building npm package.
+# See 'buildPackage'.
+# This file describes the build logic for buildPackage, as well as the build
+# description of the napalm-registry. Some tests are also present at the end of
+# the file.
+
 { pkgs ? import ./nix {}
 , sources ? pkgs.sources or (abort "Please provide a niv-style sources")
 }:
 with rec
 {
+
+  # Reads a package-lock.json and assembles a snapshot with all the packages of
+  # which the URL and sha are known. The resulting snapshot looks like the
+  # following:
+  #   { "my-package":
+  #       { "1.0.0": { url = "https://npmjs.org/some-tarball", shaX = ...};
+  #         "1.2.0": { url = "https://npmjs.org/some-tarball2", shaX = ...};
+  #       };
+  #     "other-package": { ... };
+  #   }
   snapshotFromPackageLockJson = packageLockJson:
     with rec
       { packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
+
+        # XXX: Creates a "node" for genericClosure. We include whether or not
+        # the packages contains an integrity, and if so the integriy as well,
+        # in the key. The reason is that the same package and version pair can
+        # be found several time in a package-lock.json.
         mkNode = name: obj:
           { key =
               if builtins.hasAttr "integrity" obj
-              then
-                "${name}-${obj.version}-${obj.integrity}"
-              else
-                # XXX: tricky AF
-                # TODO: explain why
-                "${name}-${obj.version}-no-integrity"
-                ;
+              then "${name}-${obj.version}-${obj.integrity}"
+              else "${name}-${obj.version}-no-integrity";
             inherit name obj;
             inherit (obj) version;
             next =
@@ -23,10 +39,16 @@ with rec
               then pkgs.lib.mapAttrsToList mkNode (obj.dependencies)
               else [];
           };
+
+        # The list of all packages discovered in the package-lock, excluding
+        # the top-level package.
         flattened = builtins.genericClosure
           { startSet = [(mkNode packageLock.name packageLock)] ;
             operator = x: x.next;
           };
+
+        # Create an entry for the snapshot, e.g.
+        #     { some-package = { some-version = { url = ...; shaX = ...} ; }; }
         snapshotEntry = x:
           with rec
             { sha =
@@ -49,6 +71,8 @@ with rec
       (pkgs.lib.recursiveUpdate acc (snapshotEntry x))
     ) {} flattened;
 
+  # Returns either the package-lock or the npm-shrinkwrap. If none is found
+  # returns null.
   findPackageLock = src:
     with rec
       { toplevel = builtins.readDir src;
@@ -59,6 +83,8 @@ with rec
     else if hasNpmShrinkwrap then "${src}/npm-shrinkwrap.json"
     else null;
 
+  # Builds an npm package, placing all the executables the 'bin' directory.
+  # All attributes are passed to 'runCommand'.
   buildPackage = src: attrs@{ packageLock ? null, ... }:
     with rec
     { actualPackageLock =
@@ -166,7 +192,8 @@ with rec
     };
 
 };
-{ hello-world =
+{ inherit buildPackage snapshotFromPackageLockJson napalm-registry-devshell;
+  hello-world =
     pkgs.runCommand "hello-world-test" {}
       ''
         ${buildPackage ./test/hello-world {}}/bin/say-hello
@@ -184,6 +211,4 @@ with rec
         ${buildPackage sources.cli {}}/bin/netlify --help
         touch $out
       '';
-
-  inherit buildPackage snapshotFromPackageLockJson napalm-registry-devshell;
 }
