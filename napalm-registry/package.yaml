@@ -1,4 +1,4 @@
-name: servant-npm
+name: napalm-registry
 
 dependencies:
     - aeson

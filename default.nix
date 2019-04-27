@@ -76,7 +76,7 @@ with rec
       discoveredPackageLock = findPackageLock src;
       snapshot = pkgs.writeText "npm-snapshot"
         (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
-      buildInputs = [ pkgs.nodejs-10_x pkgs.jq haskellPackages.servant-npm pkgs.fswatch pkgs.gcc ];
+      buildInputs = [ pkgs.nodejs-10_x pkgs.jq haskellPackages.napalm-registry pkgs.fswatch pkgs.gcc ];
       runCommandAttrs =
         let newBuildInputs =
           if builtins.hasAttr "buildInputs" attrs
@@ -86,7 +86,7 @@ with rec
     };
     pkgs.runCommand "build-npm-package" runCommandAttrs
     ''
-      servant-npm ${snapshot} &
+      napalm-registry ${snapshot} &
 
       npm config set registry 'http://localhost:8081'
 
@@ -126,20 +126,20 @@ with rec
         done
     '';
 
-  servant-npm-source = pkgs.lib.cleanSource ./servant-npm;
+  napalm-registry-source = pkgs.lib.cleanSource ./napalm-registry;
   haskellPackages = pkgs.haskellPackages.override
     { overrides = _: haskellPackages:
-        { servant-npm =
-            haskellPackages.callCabal2nix "servant-npm" servant-npm-source {};
+        { napalm-registry =
+            haskellPackages.callCabal2nix "napalm-registry" napalm-registry-source {};
         };
     };
 
-  servant-npm-devshell = haskellPackages.shellFor
-    { packages = (ps: [ ps.servant-npm ]);
+  napalm-registry-devshell = haskellPackages.shellFor
+    { packages = (ps: [ ps.napalm-registry ]);
       shellHook =
         ''
           repl() {
-            ghci servant-npm/Main.hs
+            ghci napalm-registry/Main.hs
           }
 
           echo "To start a REPL session, run:"
@@ -167,5 +167,5 @@ with rec
         touch $out
       '';
 
-  inherit buildPackage snapshotFromPackageLockJson servant-npm-devshell;
+  inherit buildPackage snapshotFromPackageLockJson napalm-registry-devshell;
 }
