@@ -86,7 +86,7 @@ with rec
     };
     pkgs.runCommand "build-npm-package" runCommandAttrs
     ''
-      napalm-registry ${snapshot} &
+      napalm-registry --snapshot ${snapshot} &
 
       npm config set registry 'http://localhost:8081'
 

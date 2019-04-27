@@ -19,7 +19,7 @@ import Data.Proxy
 import Data.String (IsString(..))
 import Data.Time (UTCTime(..), Day(ModifiedJulianDay))
 import Servant.API
-import System.Environment (getArgs)
+import qualified Options.Applicative as Opts
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Compression.GZip as GZip
 import qualified Crypto.Hash.SHA1 as SHA1
@@ -35,14 +35,40 @@ import qualified Network.URI.Encode as URI
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Servant as Servant
 
+data Config = Config
+  { _configVerbose :: Bool
+  , _configEndpoint :: T.Text
+  , _configPort :: Int
+  , configSnapshot :: FilePath
+  }
+
 main :: IO ()
 main = do
-    [packages] <- getArgs
+    config <- Opts.execParser (Opts.info (parseConfig <**> Opts.helper) Opts.fullDesc)
 
-    snapshot <- Aeson.decodeFileStrict packages >>= \case
+    snapshot <- Aeson.decodeFileStrict (configSnapshot config) >>= \case
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
     Warp.run 8081 (Servant.serve api (server snapshot))
+
+parseConfig :: Opts.Parser Config
+parseConfig = Config <$>
+    Opts.switch (
+      Opts.long "verbose" <>
+      Opts.short 'v' <>
+      Opts.help "Print information about requests"
+    ) <*>
+    Opts.strOption (
+      Opts.long "endpoint" <>
+      Opts.value "localhost"
+    ) <*>
+    Opts.option Opts.auto (
+      Opts.long "port" <>
+      Opts.value 8081
+    ) <*>
+    Opts.strOption (
+      Opts.long "snapshot"
+    )
 
 api :: Proxy API
 api = Proxy
