@@ -205,6 +205,7 @@ with rec
         ${buildPackage ./test/hello-world-deps {}}/bin/say-hello
         touch $out
       '';
+  napalm-registry = haskellPackages.napalm-registry;
   netlify-cli =
     pkgs.runCommand "netlify-cli-test" {}
       ''
