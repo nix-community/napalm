@@ -17,5 +17,9 @@ dependencies:
     - warp
     - zlib
 
+ghc-options:
+    - -Wall
+    - -Werror
+
 executable:
     main: Main.hs

@@ -7,15 +7,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 
+module Main (main) where
+
 import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
-import Debug.Trace (traceShowId)
 import Data.Aeson ((.=))
-import Data.Bifunctor
 import Data.Hashable (Hashable)
 import Data.List
-import Data.Maybe
 import Data.Proxy
 import Data.String (IsString(..))
 import Data.Time (UTCTime(..), Day(ModifiedJulianDay))
@@ -65,10 +64,7 @@ servePackageMetadata (unSnapshot -> ss) pn = do
     pvs' <- forM (HMS.toList pvs)  $ \(pv, tarPath) ->
       (pv,) <$> liftIO (mkPackageVersionMetadata pn pv tarPath)
 
-    let res = mkPackageMetadata pn (HMS.fromList pvs')
-
-    -- liftIO $ T.putStrLn $ T.decodeUtf8 $ BL.toStrict $ Aeson.encode res
-    pure res
+    pure $ mkPackageMetadata pn (HMS.fromList pvs')
 
 servePackageVersionMetadata
   :: Snapshot
@@ -83,11 +79,7 @@ servePackageVersionMetadata ss pn pv = do
       pure
       (getTarPath ss pn pv)
 
-    res <- liftIO $ mkPackageVersionMetadata pn pv tarPath
-
-    -- liftIO $ T.putStrLn $ T.decodeUtf8 $ BL.toStrict $ Aeson.encode res
-
-    pure res
+    liftIO $ mkPackageVersionMetadata pn pv tarPath
 
 getTarPath :: Snapshot -> PackageName -> PackageVersion -> Maybe FilePath
 getTarPath (unSnapshot -> ss) pn pv = do
@@ -133,20 +125,18 @@ type API =
     Capture "tarbal_name" TarballName :>
     Get '[OctetStream] Tarball
 
-newtype PackageTag = PackageTag { unPackageTag :: T.Text }
+newtype PackageTag = PackageTag { _unPackageTag :: T.Text }
   deriving newtype ( Aeson.ToJSONKey, IsString, Hashable )
 newtype PackageVersion = PackageVersion { unPackageVersion :: T.Text }
   deriving newtype ( Eq, Ord, Hashable, FromHttpApiData, Aeson.ToJSONKey, Aeson.FromJSONKey, Aeson.ToJSON )
 newtype PackageName = PackageName { unPackageName :: T.Text }
   deriving newtype ( Eq, Hashable, FromHttpApiData, Aeson.FromJSONKey, Aeson.ToJSON )
 
-data Sha1Sum = Sha1Sum { unSha1Sum :: BS.ByteString }
-
 -- | With .tgz extension
 newtype TarballName = TarballName { unTarballName :: T.Text }
   deriving newtype FromHttpApiData
 
-newtype Tarball = Tarball { unTarball :: BS.ByteString }
+newtype Tarball = Tarball { _unTarball :: BS.ByteString }
   deriving newtype (MimeRender OctetStream)
 
 data PackageMetadata = PackageMetadata
@@ -178,7 +168,8 @@ instance Aeson.ToJSON PackageMetadata where
     ]
 
 -- | Basically the package.json
-newtype PackageVersionMetadata = PackageVersionMetadata { unPackageVersionMetadata :: Aeson.Value }
+newtype PackageVersionMetadata = PackageVersionMetadata
+  { _unPackageVersionMetadata :: Aeson.Value }
   deriving newtype ( Aeson.ToJSON )
 
 sha1sum :: FilePath -> IO T.Text
@@ -188,13 +179,13 @@ sha1sum fp = hash <$> BS.readFile fp
 
 mkPackageVersionMetadata :: PackageName -> PackageVersion -> FilePath -> IO PackageVersionMetadata
 mkPackageVersionMetadata pn pv tarPath = do
-    sha1sum <- sha1sum tarPath :: IO T.Text
+    shasum <- sha1sum tarPath :: IO T.Text
 
     let
       tarName = toTarballName pn pv
       tarURL = mkTarballURL pn tarName
       dist = Aeson.object
-        [ "shasum" .= sha1sum
+        [ "shasum" .= shasum
         , "tarball" .= tarURL
         ]
 

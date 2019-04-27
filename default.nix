@@ -139,7 +139,7 @@ with rec
       shellHook =
         ''
           repl() {
-            ghci napalm-registry/Main.hs
+            ghci -Wall napalm-registry/Main.hs
           }
 
           echo "To start a REPL session, run:"
