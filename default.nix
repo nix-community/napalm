@@ -5,7 +5,6 @@
 # the file.
 
 { pkgs ? import ./nix {}
-, sources ? pkgs.sources or (abort "Please provide a niv-style sources")
 }:
 with rec
 {
@@ -207,6 +206,8 @@ with rec
       '';
   napalm-registry = haskellPackages.napalm-registry;
   netlify-cli =
+    with
+      { sources = import ./nix/sources.nix; };
     pkgs.runCommand "netlify-cli-test" {}
       ''
         ${buildPackage sources.cli {}}/bin/netlify --help

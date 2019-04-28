@@ -15,7 +15,7 @@ with [niv]: `niv add nmattia/napalm`):
 
 ``` nix
 let
-    napalm = pkgs.callPackage <napalm> { sources = null; };
+    napalm = pkgs.callPackage <napalm> {};
 in napalm.buildPackage ./. {}
 ```
 
@@ -24,11 +24,12 @@ derivation's `bin` directory.
 
 **NOTE**: napalm uses the package's `package-lock.json` (or
 `npm-shrinkwrap.json`) for building a package database. Make sure there is
-either a `pacakge-lock.json` or `npm-shrinkwrap.json` in the source. Alternatively provide the path to the package-lock file:
+either a `pacakge-lock.json` or `npm-shrinkwrap.json` in the source.
+Alternatively provide the path to the package-lock file:
 
 ``` nix
 let
-    napalm = pkgs.callPackage <napalm> { packageLock = ...; sources = null; };
+    napalm = pkgs.callPackage <napalm> { packageLock = <path/to/package-lock>; };
 in napalm.buildPackage ./. {}
 ```
 
