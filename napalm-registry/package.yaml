@@ -1,4 +1,5 @@
 name: napalm-registry
+license: MIT
 
 dependencies:
     - aeson
