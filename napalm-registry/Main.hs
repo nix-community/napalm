@@ -140,12 +140,12 @@ serveTarball config ss pn tarName = do
         , unTarballName tarName
         ]
 
-    (pn', pv) <- maybe
-      (error "Could not read tar name")
-      pure
-      (fromTarballName tarName)
-
-    when (pn' /= pn) $ error "Package names don't match"
+    pv <- maybe (error "Could not parse version") pure $ do
+      let pn' = unPackageName pn
+      let tn' = unTarballName tarName
+      a <- T.stripPrefix (pn' <> "-") tn'
+      b <- T.stripSuffix ".tgz" a
+      pure $ PackageVersion b
 
     tarPath <- maybe
       (error "No such tarball")
@@ -156,13 +156,6 @@ serveTarball config ss pn tarName = do
 toTarballName :: PackageName -> PackageVersion -> TarballName
 toTarballName (PackageName pn) (PackageVersion pv) =
     TarballName (pn <> "-" <> pv <> ".tgz")
-
-fromTarballName :: TarballName -> Maybe (PackageName, PackageVersion)
-fromTarballName (TarballName (T.reverse -> tn)) = do
-    pvn <- T.stripPrefix (T.reverse ".tgz") tn
-    let (pv,pn) = T.breakOn "-" pvn
-    pn' <- T.stripPrefix "-" pn
-    pure (PackageName (T.reverse pn'), PackageVersion (T.reverse pv))
 
 type API =
   Capture "package_name" PackageName :> Get '[JSON] PackageMetadata :<|>

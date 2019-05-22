@@ -152,7 +152,7 @@ with rec
 
       cd $out
 
-      cat _napalm-install/package.json | jq -r '.bin | .[]' | \
+      cat _napalm-install/package.json | jq -r ' select(.bin) | .bin | .[]' | \
         while IFS= read -r bin; do
           # https://github.com/NixOS/nixpkgs/pull/60215
           chmod +w $(dirname "_napalm-install/$bin")
@@ -161,7 +161,7 @@ with rec
 
       mkdir -p bin
 
-      cat _napalm-install/package.json | jq -r '.bin | keys[]' | \
+      cat _napalm-install/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
         while IFS= read -r key; do
           target=$(cat _napalm-install/package.json | jq -r --arg key "$key" '.bin[$key]')
           echo creating symlink for npm executable $key to $target
