@@ -1,4 +1,16 @@
 {
+    "deckdeckgo-starter": {
+        "homepage": "https://deckdeckgo.com",
+        "url": "https://github.com/deckgo/deckdeckgo-starter/archive/ddda5e639eb2ab1119f80dd10c6626186aea5348.tar.gz",
+        "owner": "deckgo",
+        "branch": "master",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "deckdeckgo-starter",
+        "type": "tarball",
+        "sha256": "0sb6ikc1iz1r1kjfp4jk1bx19hhj7cq4vah3gjk572vx2lqarfma",
+        "description": "The Progressive Web App alternative for simple presentations",
+        "rev": "ddda5e639eb2ab1119f80dd10c6626186aea5348"
+    },
     "nixpkgs": {
         "url": "https://github.com/NixOS/nixpkgs-channels/archive/2aa505b77c04bfd8bb702cbf261f1141a3fe55c2.tar.gz",
         "owner": "NixOS",

@@ -213,4 +213,16 @@ with rec
         ${buildPackage sources.cli {}}/bin/netlify --help
         touch $out
       '';
+  deckdeckgo-starter =
+    with
+      { sources = import ./nix/sources.nix; };
+    pkgs.runCommand "deckdeckgo-starter" { buildInputs = [ pkgs.nodejs-10_x ]; }
+      ''
+        cp -r ${buildPackage sources.deckdeckgo-starter {}}/* .
+        chmod +w -R _napalm-install
+        cd _napalm-install
+        patchShebangs node_modules/webpack/bin/webpack.js
+        npm run build
+        mv dist $out
+      '';
 }
