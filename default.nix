@@ -84,7 +84,14 @@ with rec
 
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
-  buildPackage = src: attrs@{ packageLock ? null, ... }:
+  #
+  # TODO: make derivation overridable/figure out how to pass parameters
+  buildPackage =
+    src:
+    attrs@
+    { packageLock ? null
+    , npmCommands ? [ "npm install" ]
+    , ... }:
     with rec
     { actualPackageLock =
         if ! isNull packageLock then packageLock
@@ -109,18 +116,27 @@ with rec
           pkgs.jq
           pkgs.netcat
         ];
-      runCommandAttrs =
-        let newBuildInputs =
+      newBuildInputs =
           if builtins.hasAttr "buildInputs" attrs
             then attrs.buildInputs ++ buildInputs
           else buildInputs;
-        in attrs // { buildInputs = newBuildInputs; } ;
     };
-    pkgs.runCommand "build-npm-package" runCommandAttrs
+    pkgs.stdenv.mkDerivation
+      { inherit src;
+        npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
+        buildInputs = newBuildInputs;
+
+        # TODO: Use package name in derivation name
+        name = "build-npm-package";
+        buildPhase =
     ''
+      # TODO: why does the unpacker not set the sourceRoot?
+      sourceRoot=$PWD
+
       echo "Starting napalm registry"
 
       napalm-registry --snapshot ${snapshot} &
+      napalm_REGISTRY_PID=$!
 
       while ! nc -z localhost 8081; do
         echo waiting for registry to be alive on port 8081
@@ -129,13 +145,9 @@ with rec
 
       npm config set registry 'http://localhost:8081'
 
-      mkdir -p $out/_napalm-install
-      cd $out/_napalm-install
-
-      cp -r ${src}/* .
-
       export CPATH="${pkgs.nodejs-10_x}/include/node:$CPATH"
 
+      echo "Starting up file watch"
       # Extremely sad workaround to make sure the scripts are patched before
       # npm tries to use them
       fswatch -0 -r node_modules | \
@@ -143,15 +155,34 @@ with rec
         do
           [ -x "$event" ] && patchShebangs $event 2>&1 > /dev/null || true
         done 2>&1 > /dev/null &
+      napalm_FILE_WATCH=$!
 
       echo "Installing npm package"
 
-      npm install --nodedir=${pkgs.nodejs-10_x}/include/node
+      echo "$npmCommands"
 
-      echo "Patching package executables"
+      echo "$npmCommands" | \
+        while IFS= read -r c
+        do
+          echo "Runnig npm command: $c"
+          $c
+        done
+      #done
 
+      # XXX: we have no guarantees that the file watch has processed all files.
+      # A better alternative is to run patchShebangs one more time.
+      echo "Shutting down file watch"
+      kill $napalm_FILE_WATCH
+
+      echo "Shutting down napalm registry"
+      kill $napalm_REGISTRY_PID
+    '';
+      installPhase =
+          ''
+      mkdir -p $out/_napalm-install
+      cp -r $sourceRoot/* $out/_napalm-install
       cd $out
-
+      echo "Patching package executables"
       cat _napalm-install/package.json | jq -r ' select(.bin) | .bin | .[]' | \
         while IFS= read -r bin; do
           # https://github.com/NixOS/nixpkgs/pull/60215
@@ -161,13 +192,15 @@ with rec
 
       mkdir -p bin
 
+      echo "Creating package executable symlinks in bin"
       cat _napalm-install/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
         while IFS= read -r key; do
           target=$(cat _napalm-install/package.json | jq -r --arg key "$key" '.bin[$key]')
           echo creating symlink for npm executable $key to $target
           ln -s ../_napalm-install/$target bin/$key
         done
-    '';
+          '';
+      };
 
   napalm-registry-source = pkgs.lib.cleanSource ./napalm-registry;
   haskellPackages = pkgs.haskellPackages.override
@@ -214,15 +247,20 @@ with rec
         touch $out
       '';
   deckdeckgo-starter =
-    with
-      { sources = import ./nix/sources.nix; };
+    with rec
+      { sources = import ./nix/sources.nix;
+        starterKit = buildPackage sources.deckdeckgo-starter
+          { npmCommands = [ "npm install" "npm run build" ]; };
+      };
     pkgs.runCommand "deckdeckgo-starter" { buildInputs = [ pkgs.nodejs-10_x ]; }
       ''
-        cp -r ${buildPackage sources.deckdeckgo-starter {}}/* .
-        chmod +w -R _napalm-install
-        cd _napalm-install
-        patchShebangs node_modules/webpack/bin/webpack.js
-        npm run build
-        mv dist $out
+        echo ${starterKit}
+        if [ ! -f ${starterKit}/_napalm-install/dist/index.html ]
+        then
+          echo "Dist wasn't generated"
+          exit 1
+        else
+          touch $out
+        fi
       '';
 }
