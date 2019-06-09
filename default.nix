@@ -168,6 +168,9 @@ with rec
         do
           echo "Runnig npm command: $c"
           $c
+          echo "Overzealously patching shebangs"
+          if [ -d node_modules ]; then find node_modules -type d -name bin | \
+            while read file; do patchShebangs $file; done; fi
         done
 
       # XXX: we have no guarantees that the file watch has processed all files.
@@ -194,6 +197,7 @@ with rec
         while IFS= read -r bin; do
           # https://github.com/NixOS/nixpkgs/pull/60215
           chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
+          chmod +x $napalm_INSTALL_DIR/$bin
           patchShebangs $napalm_INSTALL_DIR/$bin
         done
 
@@ -265,7 +269,7 @@ with rec
             postInstall = "ln -s $napalm_INSTALL_DIR/dist $dist";
           });
       };
-    pkgs.runCommand "deckdeckgo-starter" { buildInputs = [ pkgs.nodejs-10_x ]; }
+    pkgs.runCommand "deckdeckgo-starter" {}
       ''
         if [ ! -f ${starterKit.dist}/index.html ]
         then
@@ -274,5 +278,31 @@ with rec
         else
           touch $out
         fi
+      '';
+
+  bitwarden-cli =
+    with rec
+      { sources = import ./nix/sources.nix;
+        bwDrv = buildPackage sources.bitwarden-cli
+          { npmCommands =
+              [ "npm install"
+                "npm run build"
+              ];
+          };
+        bw = bwDrv.overrideAttrs (oldAttrs:
+          { # XXX: niv doesn't support submodules :'(
+            # we work around that by skipping "npm run sub:init" and installing
+            # the submodule manually
+            postUnpack =
+              ''
+                rmdir $sourceRoot/jslib
+                cp -r ${sources.bitwarden-jslib} $sourceRoot/jslib
+              '';
+          });
+      };
+    pkgs.runCommand "bitwarden-cli" { buildInputs = [bw] ; }
+      ''
+        bw --help
+        touch $out
       '';
 }
