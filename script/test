@@ -1,0 +1,3 @@
+# vim: set ft=bash
+
+nix-build --no-link --max-jobs 20 --sandbox
