@@ -279,4 +279,30 @@ with rec
           touch $out
         fi
       '';
+
+  bitwarden-cli =
+    with rec
+      { sources = import ./nix/sources.nix;
+        bwDrv = buildPackage sources.bitwarden-cli
+          { npmCommands =
+              [ "npm install"
+                "npm run build"
+              ];
+          };
+        bw = bwDrv.overrideAttrs (oldAttrs:
+          { # XXX: niv doesn't support submodules :'(
+            # we work around that by skipping "npm run sub:init" and installing
+            # the submodule manually
+            postUnpack =
+              ''
+                rmdir $sourceRoot/jslib
+                cp -r ${sources.bitwarden-jslib} $sourceRoot/jslib
+              '';
+          });
+      };
+    pkgs.runCommand "bitwarden-cli" { buildInputs = [bw] ; }
+      ''
+        bw --help
+        touch $out
+      '';
 }

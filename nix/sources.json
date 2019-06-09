@@ -1,4 +1,16 @@
 {
+    "bitwarden-jslib": {
+        "homepage": "https://bitwarden.com",
+        "url": "https://github.com/bitwarden/jslib/archive/8375f7381ad1d113fbf2fe2bd65e90ec4a1631b7.tar.gz",
+        "owner": "bitwarden",
+        "branch": "master",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "jslib",
+        "type": "tarball",
+        "sha256": "0m6ihff06r577icbjc4vx864vzmyfvzlahpg0fg86kdz8ri3djv7",
+        "description": "Common code referenced across Bitwarden JavaScript projects.",
+        "rev": "8375f7381ad1d113fbf2fe2bd65e90ec4a1631b7"
+    },
     "deckdeckgo-starter": {
         "homepage": "https://deckdeckgo.com",
         "url": "https://github.com/deckgo/deckdeckgo-starter/archive/713a3eeca1f9b8d67bf6c97aa5b2be6a6cb94a15.tar.gz",
@@ -21,6 +33,18 @@
         "sha256": "16j95q58kkc69lfgpjkj76gw5sx8rcxwi3civm0mlfaxxyw9gzp6",
         "description": "Nixpkgs/NixOS branches that track the Nixpkgs/NixOS channels",
         "rev": "a7e559a5504572008567383c3dc8e142fa7a8633"
+    },
+    "bitwarden-cli": {
+        "homepage": "https://bitwarden.com",
+        "url": "https://github.com/bitwarden/cli/archive/f6bb228249319d8a40dd33aa40734733e931e2c7.tar.gz",
+        "owner": "bitwarden",
+        "branch": "master",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "cli",
+        "type": "tarball",
+        "sha256": "0xacbj6pw0nnlfpq4990zrxh6gycd0qql8hnlvnvfnbvrk5g2dfz",
+        "description": "The command line vault (Windows, macOS, & Linux).",
+        "rev": "f6bb228249319d8a40dd33aa40734733e931e2c7"
     },
     "cli": {
         "homepage": "https://www.netlify.com/docs/cli",
