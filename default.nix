@@ -269,8 +269,7 @@ with rec
             postInstall = "ln -s $napalm_INSTALL_DIR/dist $dist";
           });
       };
-    # XXX: what are those buildInputs for?
-    pkgs.runCommand "deckdeckgo-starter" { buildInputs = [ pkgs.nodejs-10_x ]; }
+    pkgs.runCommand "deckdeckgo-starter" {}
       ''
         if [ ! -f ${starterKit.dist}/index.html ]
         then
