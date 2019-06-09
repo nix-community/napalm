@@ -168,6 +168,9 @@ with rec
         do
           echo "Runnig npm command: $c"
           $c
+          echo "Overzealously patching shebangs"
+          find node_modules -type d -name bin | \
+            while read file; do patchShebangs $file; done
         done
 
       # XXX: we have no guarantees that the file watch has processed all files.
@@ -194,6 +197,7 @@ with rec
         while IFS= read -r bin; do
           # https://github.com/NixOS/nixpkgs/pull/60215
           chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
+          chmod +x $napalm_INSTALL_DIR/$bin
           patchShebangs $napalm_INSTALL_DIR/$bin
         done
 
@@ -265,6 +269,7 @@ with rec
             postInstall = "ln -s $napalm_INSTALL_DIR/dist $dist";
           });
       };
+    # XXX: what are those buildInputs for?
     pkgs.runCommand "deckdeckgo-starter" { buildInputs = [ pkgs.nodejs-10_x ]; }
       ''
         if [ ! -f ${starterKit.dist}/index.html ]
