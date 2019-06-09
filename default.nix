@@ -85,7 +85,7 @@ with rec
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
   #
-  # TODO: make derivation overridable/figure out how to pass parameters
+  # TODO: document environment variables that are set by each phase
   buildPackage =
     src:
     attrs@
@@ -130,6 +130,8 @@ with rec
         name = "build-npm-package";
         buildPhase =
     ''
+      runHook preBuild
+
       # TODO: why does the unpacker not set the sourceRoot?
       sourceRoot=$PWD
 
@@ -167,38 +169,45 @@ with rec
           echo "Runnig npm command: $c"
           $c
         done
-      #done
 
       # XXX: we have no guarantees that the file watch has processed all files.
-      # A better alternative is to run patchShebangs one more time.
+      # One thing we could do is run patchShebangs on all the files one more
+      # time?
       echo "Shutting down file watch"
       kill $napalm_FILE_WATCH
 
       echo "Shutting down napalm registry"
       kill $napalm_REGISTRY_PID
+
+      runHook postBuild
     '';
       installPhase =
           ''
-      mkdir -p $out/_napalm-install
-      cp -r $sourceRoot/* $out/_napalm-install
-      cd $out
+      runHook preInstall
+
+      napalm_INSTALL_DIR=''${napalm_INSTALL_DIR:-$out/_napalm-install}
+      mkdir -p $napalm_INSTALL_DIR
+      cp -r $sourceRoot/* $napalm_INSTALL_DIR
+
       echo "Patching package executables"
-      cat _napalm-install/package.json | jq -r ' select(.bin) | .bin | .[]' | \
+      cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | .[]' | \
         while IFS= read -r bin; do
           # https://github.com/NixOS/nixpkgs/pull/60215
-          chmod +w $(dirname "_napalm-install/$bin")
-          patchShebangs _napalm-install/$bin
+          chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
+          patchShebangs $napalm_INSTALL_DIR/$bin
         done
 
-      mkdir -p bin
+      mkdir -p $out/bin
 
       echo "Creating package executable symlinks in bin"
-      cat _napalm-install/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
+      cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
         while IFS= read -r key; do
-          target=$(cat _napalm-install/package.json | jq -r --arg key "$key" '.bin[$key]')
+          target=$(cat $napalm_INSTALL_DIR/package.json | jq -r --arg key "$key" '.bin[$key]')
           echo creating symlink for npm executable $key to $target
-          ln -s ../_napalm-install/$target bin/$key
+          ln -s $napalm_INSTALL_DIR/$target $out/bin/$key
         done
+
+      runHook postInstall
           '';
       };
 
@@ -249,13 +258,16 @@ with rec
   deckdeckgo-starter =
     with rec
       { sources = import ./nix/sources.nix;
-        starterKit = buildPackage sources.deckdeckgo-starter
+        starterKitDrv = buildPackage sources.deckdeckgo-starter
           { npmCommands = [ "npm install" "npm run build" ]; };
+        starterKit = starterKitDrv.overrideAttrs (oldAttrs:
+          { outputs = [ "out" "dist" ];
+            postInstall = "ln -s $napalm_INSTALL_DIR/dist $dist";
+          });
       };
     pkgs.runCommand "deckdeckgo-starter" { buildInputs = [ pkgs.nodejs-10_x ]; }
       ''
-        echo ${starterKit}
-        if [ ! -f ${starterKit}/_napalm-install/dist/index.html ]
+        if [ ! -f ${starterKit.dist}/index.html ]
         then
           echo "Dist wasn't generated"
           exit 1
