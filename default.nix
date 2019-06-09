@@ -137,7 +137,7 @@ with rec
       export CPATH="${pkgs.nodejs-10_x}/include/node:$CPATH"
 
       # Extremely sad workaround to make sure the scripts are patched before
-      # npm tried to use them
+      # npm tries to use them
       fswatch -0 -r node_modules | \
         while read -d "" event
         do
