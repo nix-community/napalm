@@ -1,49 +1,49 @@
 {
     "deckdeckgo-starter": {
         "homepage": "https://deckdeckgo.com",
-        "url": "https://github.com/deckgo/deckdeckgo-starter/archive/ddda5e639eb2ab1119f80dd10c6626186aea5348.tar.gz",
+        "url": "https://github.com/deckgo/deckdeckgo-starter/archive/713a3eeca1f9b8d67bf6c97aa5b2be6a6cb94a15.tar.gz",
         "owner": "deckgo",
         "branch": "master",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
         "repo": "deckdeckgo-starter",
         "type": "tarball",
-        "sha256": "0sb6ikc1iz1r1kjfp4jk1bx19hhj7cq4vah3gjk572vx2lqarfma",
+        "sha256": "14h20vr1xszqnm2rdv10v8mgafblyisbrf41vb17s4s7icawzdn5",
         "description": "The Progressive Web App alternative for simple presentations",
-        "rev": "ddda5e639eb2ab1119f80dd10c6626186aea5348"
+        "rev": "713a3eeca1f9b8d67bf6c97aa5b2be6a6cb94a15"
     },
     "nixpkgs": {
-        "url": "https://github.com/NixOS/nixpkgs-channels/archive/2aa505b77c04bfd8bb702cbf261f1141a3fe55c2.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs-channels/archive/a7e559a5504572008567383c3dc8e142fa7a8633.tar.gz",
         "owner": "NixOS",
         "branch": "nixos-18.09",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
         "repo": "nixpkgs-channels",
         "type": "tarball",
-        "sha256": "14lp7lcwfy6zs2xlhmc71dbq767inz6rp9v2wcma3lf3jf46acvl",
+        "sha256": "16j95q58kkc69lfgpjkj76gw5sx8rcxwi3civm0mlfaxxyw9gzp6",
         "description": "Nixpkgs/NixOS branches that track the Nixpkgs/NixOS channels",
-        "rev": "2aa505b77c04bfd8bb702cbf261f1141a3fe55c2"
+        "rev": "a7e559a5504572008567383c3dc8e142fa7a8633"
     },
     "cli": {
         "homepage": "https://www.netlify.com/docs/cli",
-        "url": "https://github.com/netlify/cli/archive/18f15ff09d16622357b4ab2c79078366b912a425.tar.gz",
+        "url": "https://github.com/netlify/cli/archive/3a21c961b6c66abe04902fb6c6c500490763b33a.tar.gz",
         "owner": "netlify",
         "branch": "master",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
         "repo": "cli",
         "type": "tarball",
-        "sha256": "0rl5ib7l9irdan19ycsapcl8i06y9i6j9qk7vl3m6gzxlhi1kzkw",
+        "sha256": "10qn20iv6d34jvgjmh7hsqmn6fkwsz4qzw6cpwy9qjm07dk5m0p1",
         "description": "Netlify command line tool",
-        "rev": "18f15ff09d16622357b4ab2c79078366b912a425"
+        "rev": "3a21c961b6c66abe04902fb6c6c500490763b33a"
     },
     "niv": {
         "homepage": "https://github.com/nmattia/niv",
-        "url": "https://github.com/nmattia/niv/archive/a489b65a5c3a29983701069d1ce395b23d9bde64.tar.gz",
+        "url": "https://github.com/nmattia/niv/archive/2f95c55006d6138aafe44e452350ce7fa3211dfd.tar.gz",
         "owner": "nmattia",
         "branch": "master",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
         "repo": "niv",
         "type": "tarball",
-        "sha256": "0mvh2x4l4f3nbgzzygk317nkzbyj3xgnczivgdra4q82dg8x77ka",
+        "sha256": "1w6bxy8d620ks5ggkkw477gjsj2r4562saq0kqf7gvbbq1wla9mg",
         "description": "Easy dependency management for Nix projects",
-        "rev": "a489b65a5c3a29983701069d1ce395b23d9bde64"
+        "rev": "2f95c55006d6138aafe44e452350ce7fa3211dfd"
     }
 }
