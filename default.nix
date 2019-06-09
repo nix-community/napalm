@@ -169,8 +169,8 @@ with rec
           echo "Runnig npm command: $c"
           $c
           echo "Overzealously patching shebangs"
-          find node_modules -type d -name bin | \
-            while read file; do patchShebangs $file; done
+          if [ -d node_modules ]; then find node_modules -type d -name bin | \
+            while read file; do patchShebangs $file; done; fi
         done
 
       # XXX: we have no guarantees that the file watch has processed all files.
