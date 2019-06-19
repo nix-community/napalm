@@ -128,6 +128,9 @@ with rec
 
         # TODO: Use package name in derivation name
         name = "build-npm-package";
+
+        configurePhase = "export HOME=$(mktemp -d)";
+
         buildPhase =
     ''
       runHook preBuild
@@ -149,16 +152,6 @@ with rec
 
       export CPATH="${pkgs.nodejs-10_x}/include/node:$CPATH"
 
-      echo "Starting up file watch"
-      # Extremely sad workaround to make sure the scripts are patched before
-      # npm tries to use them
-      fswatch -0 -r node_modules | \
-        while read -d "" event
-        do
-          [ -x "$event" ] && patchShebangs $event 2>&1 > /dev/null || true
-        done 2>&1 > /dev/null &
-      napalm_FILE_WATCH=$!
-
       echo "Installing npm package"
 
       echo "$npmCommands"
@@ -172,12 +165,6 @@ with rec
           if [ -d node_modules ]; then find node_modules -type d -name bin | \
             while read file; do patchShebangs $file; done; fi
         done
-
-      # XXX: we have no guarantees that the file watch has processed all files.
-      # One thing we could do is run patchShebangs on all the files one more
-      # time?
-      echo "Shutting down file watch"
-      kill $napalm_FILE_WATCH
 
       echo "Shutting down napalm registry"
       kill $napalm_REGISTRY_PID
@@ -256,6 +243,7 @@ with rec
       { sources = import ./nix/sources.nix; };
     pkgs.runCommand "netlify-cli-test" {}
       ''
+        export HOME=$(mktemp -d)
         ${buildPackage sources.cli {}}/bin/netlify --help
         touch $out
       '';
@@ -302,6 +290,7 @@ with rec
       };
     pkgs.runCommand "bitwarden-cli" { buildInputs = [bw] ; }
       ''
+        export HOME=$(mktemp -d)
         bw --help
         touch $out
       '';
