@@ -8,6 +8,44 @@
 }:
 with rec
 {
+  # todo: rename integrity512
+  sha512sum = file:
+    with
+      { drv =
+          pkgs.runCommand "sha512sum" { buildInputs = [ pkgs.openssl ]; }
+          # https://www.w3.org/TR/SRI/
+          ''
+            cat ${file} | openssl dgst -sha512 -binary | openssl base64 -A > $out
+            ##nix-hash --type sha512 --flat --base32 <(cat ${file}) > $out
+          '';
+      };
+
+    builtins.readFile drv;
+    #pkgs.lib.head (pkgs.lib.splitString "\n" (builtins.readFile drv));
+
+  fixedUpPackageLock = snapshot: packageLock:
+    with rec
+      { fixup' = name: spec: k: v:
+          if k == "integrity" then
+            # Convert all to sha512 for npm cache
+            if pkgs.lib.hasPrefix "sha512" v
+            then v
+            else
+              "sha512-${sha512sum snapshot.${name}.${spec.version}}"
+          else if k == "dependencies" then
+            pkgs.lib.mapAttrs fixup v
+          else
+            v;
+        fixup = name: spec: pkgs.lib.mapAttrs (k: v:
+          fixup' name spec k v
+          ) spec;
+      };
+    pkgs.writeText "package-lock.json"
+      (
+        builtins.toJSON (pkgs.lib.mapAttrs (fixup' null null) packageLock)
+      );
+      #''{}'';
+    #packageLock;
 
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
@@ -23,9 +61,9 @@ with rec
       { packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
         # XXX: Creates a "node" for genericClosure. We include whether or not
-        # the packages contains an integrity, and if so the integriy as well,
-        # in the key. The reason is that the same package and version pair can
-        # be found several time in a package-lock.json.
+        # the package contains an integrity, and if so the integriy as well, in
+        # the key. The reason is that the same package and version pair can be
+        # found several time in a package-lock.json.
         mkNode = name: obj:
           { key =
               if builtins.hasAttr "integrity" obj
@@ -56,6 +94,7 @@ with rec
                 if pkgs.lib.hasPrefix "sha512-" x.obj.integrity
                 then { sha512 = pkgs.lib.removePrefix "sha512-" x.obj.integrity; }
                 else abort "Unknown sha for ${x.obj.integrity}";
+              # TODO: nix should support SRI
             };
           if builtins.hasAttr "resolved" x.obj
           then
@@ -106,15 +145,17 @@ with rec
             Otherwise, you will see this error message.
           '';
       discoveredPackageLock = findPackageLock src;
-      snapshot = pkgs.writeText "npm-snapshot"
+      snapshot = snapshotFromPackageLockJson actualPackageLock;
+      snapshotFile = pkgs.writeText "npm-snapshot"
         (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
       buildInputs =
-        [ pkgs.nodejs-10_x
+        [ pkgs.nodejs-12_x
           haskellPackages.napalm-registry
           pkgs.fswatch
           pkgs.gcc
           pkgs.jq
           pkgs.netcat
+          pkgs.parallel
         ];
       newBuildInputs =
           if builtins.hasAttr "buildInputs" attrs
@@ -135,24 +176,44 @@ with rec
     ''
       runHook preBuild
 
-      # TODO: why does the unpacker not set the sourceRoot?
+      # TODO: why doesn't the unpacker set the sourceRoot?
       sourceRoot=$PWD
+      #cat package-lock.json
+      cp ${fixedUpPackageLock snapshot (builtins.fromJSON (builtins.readFile actualPackageLock))} package-lock.json
+      cat package-lock.json
 
-      echo "Starting napalm registry"
+      #echo "Starting napalm registry"
+      export HOME=$(mktemp -d)
+      export TMPDIR=$(mktemp -d)
 
-      napalm-registry --snapshot ${snapshot} &
-      napalm_REGISTRY_PID=$!
 
-      while ! nc -z localhost 8081; do
-        echo waiting for registry to be alive on port 8081
-        sleep 1
-      done
+      cat ${snapshotFile} | jq '.[] | .[]' -r |\
+        parallel -j 64 'echo Caching: {} ; npm cache add {}' # npm cache add {}
+        #while IFS= read -r c
+        #do
+          #echo "Caching: $c"
+          #npm cache add "$c"
+        #done
 
-      npm config set registry 'http://localhost:8081'
+      npm cache verify
 
-      export CPATH="${pkgs.nodejs-10_x}/include/node:$CPATH"
+
+      #napalm-registry --snapshot ${snapshotFile} &
+      #napalm_REGISTRY_PID=$!
+
+      #while ! nc -z localhost 8081; do
+        #echo waiting for registry to be alive on port 8081
+        #sleep 1
+      #done
+
+      #npm config set registry 'http://localhost:8081'
+      #npm config set offline true
+
+      export CPATH="${pkgs.nodejs-12_x}/include/node:$CPATH"
 
       echo "Installing npm package"
+
+      ulimit -n 8196
 
       echo "$npmCommands"
 
@@ -167,7 +228,7 @@ with rec
         done
 
       echo "Shutting down napalm registry"
-      kill $napalm_REGISTRY_PID
+      #kill $napalm_REGISTRY_PID
 
       runHook postBuild
     '';

@@ -24,15 +24,15 @@
         "rev": "713a3eeca1f9b8d67bf6c97aa5b2be6a6cb94a15"
     },
     "nixpkgs": {
-        "url": "https://github.com/NixOS/nixpkgs-channels/archive/a7e559a5504572008567383c3dc8e142fa7a8633.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/8b7c42032ea563d545712272cfa7d10fd9b60681.tar.gz",
         "owner": "NixOS",
-        "branch": "nixos-18.09",
+        "branch": "master",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
-        "repo": "nixpkgs-channels",
+        "repo": "nixpkgs",
         "type": "tarball",
-        "sha256": "16j95q58kkc69lfgpjkj76gw5sx8rcxwi3civm0mlfaxxyw9gzp6",
+        "sha256": "09iiphkn7hi7k8f3f33wjsziwc68x0vnj24818c5v1g10c6i4z43",
         "description": "Nixpkgs/NixOS branches that track the Nixpkgs/NixOS channels",
-        "rev": "a7e559a5504572008567383c3dc8e142fa7a8633"
+        "rev": "8b7c42032ea563d545712272cfa7d10fd9b60681"
     },
     "bitwarden-cli": {
         "homepage": "https://bitwarden.com",
