@@ -180,7 +180,8 @@ with rec
       sourceRoot=$PWD
       #cat package-lock.json
       cp ${fixedUpPackageLock snapshot (builtins.fromJSON (builtins.readFile actualPackageLock))} package-lock.json
-      cat package-lock.json
+      rm npm-shrinkwrap.json || echo no shrinkwrap
+      #cat package-lock.json
 
       #echo "Starting napalm registry"
       export HOME=$(mktemp -d)
@@ -188,7 +189,7 @@ with rec
 
 
       cat ${snapshotFile} | jq '.[] | .[]' -r |\
-        parallel -j 64 'echo Caching: {} ; npm cache add {}' # npm cache add {}
+        parallel -j 128 'echo Caching: {} ; npm cache add {}' # npm cache add {}
         #while IFS= read -r c
         #do
           #echo "Caching: $c"
