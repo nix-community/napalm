@@ -109,6 +109,28 @@ with rec
       (pkgs.lib.recursiveUpdate acc (snapshotEntry x))
     ) {} flattened;
 
+  prepareCrate = tarball:
+    pkgs.runCommand "cache"
+      { buildInputs = [ pkgs.nodejs-12_x ] ;}
+      ''
+        export HOME=$(mktemp -d)
+        echo caching ${tarball}
+        npm cache add ${tarball}
+
+        ls -la $HOME
+        ls -la $HOME/.npm
+
+        mkdir -p $out
+        cp -r $HOME/.npm/_cacache $out
+      '';
+
+  prepareCache = tarballs:
+    pkgs.symlinkJoin
+      { name = "cacache"; paths = map prepareCrate tarballs; };
+
+  snapshotTarballs = snapshot:
+    pkgs.lib.concatMap builtins.attrValues (builtins.attrValues snapshot);
+
   # Returns either the package-lock or the npm-shrinkwrap. If none is found
   # returns null.
   findPackageLock = src:
@@ -172,6 +194,7 @@ with rec
 
         configurePhase = "export HOME=$(mktemp -d)";
 
+      #cp ${fixedUpPackageLock snapshot (builtins.fromJSON (builtins.readFile actualPackageLock))} package-lock.json
         buildPhase =
     ''
       runHook preBuild
@@ -179,23 +202,26 @@ with rec
       # TODO: why doesn't the unpacker set the sourceRoot?
       sourceRoot=$PWD
       #cat package-lock.json
-      cp ${fixedUpPackageLock snapshot (builtins.fromJSON (builtins.readFile actualPackageLock))} package-lock.json
-      rm npm-shrinkwrap.json || echo no shrinkwrap
+      #rm npm-shrinkwrap.json || echo no shrinkwrap
       #cat package-lock.json
 
       #echo "Starting napalm registry"
       export HOME=$(mktemp -d)
       export TMPDIR=$(mktemp -d)
+      mkdir -p $HOME/.npm/
 
+      echo copying cache
+      time cp -Lr --no-preserve mode ${prepareCache (snapshotTarballs snapshot)}/_cacache $HOME/.npm
 
-      cat ${snapshotFile} | jq '.[] | .[]' -r |\
-        parallel -j 128 'echo Caching: {} ; npm cache add {}' # npm cache add {}
+      #cat ${snapshotFile} | jq '.[] | .[]' -r |\
+        #parallel -j 128 'echo Caching: {} ; npm cache add {}' # npm cache add {}
         #while IFS= read -r c
         #do
           #echo "Caching: $c"
           #npm cache add "$c"
         #done
 
+      echo verifying cache
       npm cache verify
 
 
