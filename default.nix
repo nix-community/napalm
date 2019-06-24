@@ -1,51 +1,12 @@
 # The napalm nix support for building npm package.
 # See 'buildPackage'.
-# This file describes the build logic for buildPackage, as well as the build
-# description of the napalm-registry. Some tests are also present at the end of
-# the file.
+# This file describes the build logic for buildPackage. Some tests are also
+# present at the end of the file.
 
 { pkgs ? import ./nix {}
 }:
 with rec
 {
-  # todo: rename integrity512
-  sha512sum = file:
-    with
-      { drv =
-          pkgs.runCommand "sha512sum" { buildInputs = [ pkgs.openssl ]; }
-          # https://www.w3.org/TR/SRI/
-          ''
-            cat ${file} | openssl dgst -sha512 -binary | openssl base64 -A > $out
-            ##nix-hash --type sha512 --flat --base32 <(cat ${file}) > $out
-          '';
-      };
-
-    builtins.readFile drv;
-    #pkgs.lib.head (pkgs.lib.splitString "\n" (builtins.readFile drv));
-
-  fixedUpPackageLock = snapshot: packageLock:
-    with rec
-      { fixup' = name: spec: k: v:
-          if k == "integrity" then
-            # Convert all to sha512 for npm cache
-            if pkgs.lib.hasPrefix "sha512" v
-            then v
-            else
-              "sha512-${sha512sum snapshot.${name}.${spec.version}}"
-          else if k == "dependencies" then
-            pkgs.lib.mapAttrs fixup v
-          else
-            v;
-        fixup = name: spec: pkgs.lib.mapAttrs (k: v:
-          fixup' name spec k v
-          ) spec;
-      };
-    pkgs.writeText "package-lock.json"
-      (
-        builtins.toJSON (pkgs.lib.mapAttrs (fixup' null null) packageLock)
-      );
-      #''{}'';
-    #packageLock;
 
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
@@ -111,17 +72,29 @@ with rec
 
   prepareCrate = tarball:
     pkgs.runCommand "cache"
-      { buildInputs = [ pkgs.nodejs-12_x ] ;}
+      { buildInputs = [ pkgs.nodejs-12_x pkgs.openssl pkgs.nix ] ;}
       ''
         export HOME=$(mktemp -d)
         echo caching ${tarball}
         npm cache add ${tarball}
 
-        ls -la $HOME
-        ls -la $HOME/.npm
-
         mkdir -p $out
         cp -r $HOME/.npm/_cacache $out
+
+        sha512=$(cat ${tarball} |\
+          openssl dgst -sha512 -binary |\
+          openssl base64 -A)
+
+        sha1=$(cat ${tarball} |\
+          openssl dgst -sha1 -binary |\
+          openssl base64 -A)
+
+        key=$(nix-hash ${tarball})
+
+        mkdir -p $out/.napalm-support/$key
+
+        echo "{\"sha512\":\"$sha512\",\"sha1\":\"$sha1\"}" > \
+          $out/.napalm-support/$key/checksums.json
       '';
 
   prepareCache = tarballs:
@@ -172,17 +145,16 @@ with rec
         (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
       buildInputs =
         [ pkgs.nodejs-12_x
-          haskellPackages.napalm-registry
-          pkgs.fswatch
           pkgs.gcc
           pkgs.jq
           pkgs.netcat
-          pkgs.parallel
         ];
       newBuildInputs =
           if builtins.hasAttr "buildInputs" attrs
             then attrs.buildInputs ++ buildInputs
           else buildInputs;
+
+      crates = prepareCache (snapshotTarballs snapshot);
     };
     pkgs.stdenv.mkDerivation
       { inherit src;
@@ -194,53 +166,51 @@ with rec
 
         configurePhase = "export HOME=$(mktemp -d)";
 
-      #cp ${fixedUpPackageLock snapshot (builtins.fromJSON (builtins.readFile actualPackageLock))} package-lock.json
         buildPhase =
     ''
       runHook preBuild
 
       # TODO: why doesn't the unpacker set the sourceRoot?
       sourceRoot=$PWD
-      #cat package-lock.json
-      #rm npm-shrinkwrap.json || echo no shrinkwrap
-      #cat package-lock.json
 
       #echo "Starting napalm registry"
       export HOME=$(mktemp -d)
       export TMPDIR=$(mktemp -d)
       mkdir -p $HOME/.npm/
 
-      echo copying cache
-      time cp -Lr --no-preserve mode ${prepareCache (snapshotTarballs snapshot)}/_cacache $HOME/.npm
+      if [ -d ${crates}/_cacache ]
+      then
+        echo copying cache
+        time cp -Lr --no-preserve mode ${crates}/_cacache $HOME/.npm
+      fi
 
-      #cat ${snapshotFile} | jq '.[] | .[]' -r |\
-        #parallel -j 128 'echo Caching: {} ; npm cache add {}' # npm cache add {}
-        #while IFS= read -r c
-        #do
-          #echo "Caching: $c"
-          #npm cache add "$c"
-        #done
+      sedscript=$(mktemp)
+
+      echo "creating sed script"
+
+      # Replaces all sha1 integrities with sha512
+      cat ${crates}/.napalm-support/*/checksums.json |\
+        jq -r '. | "s:sha1-\(.sha1):sha512-\(.sha512):"' >> $sedscript
+
+      echo patching lock files
+
+      if [ -f package-lock.json ]
+      then
+        echo patching package-lock.json
+        time sed -i -f $sedscript package-lock.json
+      fi
+      if [ -f npm-shrinkwrap.json ]
+      then
+        echo patching npm-shrinkwrap.json
+        time sed -i -f $sedscript npm-shrinkwrap.json
+      fi
 
       echo verifying cache
       npm cache verify
 
-
-      #napalm-registry --snapshot ${snapshotFile} &
-      #napalm_REGISTRY_PID=$!
-
-      #while ! nc -z localhost 8081; do
-        #echo waiting for registry to be alive on port 8081
-        #sleep 1
-      #done
-
-      #npm config set registry 'http://localhost:8081'
-      #npm config set offline true
-
       export CPATH="${pkgs.nodejs-12_x}/include/node:$CPATH"
 
       echo "Installing npm package"
-
-      ulimit -n 8196
 
       echo "$npmCommands"
 
@@ -253,9 +223,6 @@ with rec
           if [ -d node_modules ]; then find node_modules -type d -name bin | \
             while read file; do patchShebangs $file; done; fi
         done
-
-      echo "Shutting down napalm registry"
-      #kill $napalm_REGISTRY_PID
 
       runHook postBuild
     '';
@@ -290,29 +257,8 @@ with rec
           '';
       };
 
-  napalm-registry-source = pkgs.lib.cleanSource ./napalm-registry;
-  haskellPackages = pkgs.haskellPackages.override
-    { overrides = _: haskellPackages:
-        { napalm-registry =
-            haskellPackages.callCabal2nix "napalm-registry" napalm-registry-source {};
-        };
-    };
-
-  napalm-registry-devshell = haskellPackages.shellFor
-    { packages = (ps: [ ps.napalm-registry ]);
-      shellHook =
-        ''
-          repl() {
-            ghci -Wall napalm-registry/Main.hs
-          }
-
-          echo "To start a REPL session, run:"
-          echo "  > repl"
-        '';
-    };
-
 };
-{ inherit buildPackage snapshotFromPackageLockJson napalm-registry-devshell;
+{ inherit buildPackage snapshotFromPackageLockJson ;
   hello-world =
     pkgs.runCommand "hello-world-test" {}
       ''
@@ -325,7 +271,6 @@ with rec
         ${buildPackage ./test/hello-world-deps {}}/bin/say-hello
         touch $out
       '';
-  napalm-registry = haskellPackages.napalm-registry;
   netlify-cli =
     with
       { sources = import ./nix/sources.nix; };
