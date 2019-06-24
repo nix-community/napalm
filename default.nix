@@ -70,36 +70,81 @@ with rec
       (pkgs.lib.recursiveUpdate acc (snapshotEntry x))
     ) {} flattened;
 
-  prepareCrate = tarball:
+  preparePackage = tarball:
     pkgs.runCommand "cache"
-      { buildInputs = [ pkgs.nodejs-12_x pkgs.openssl pkgs.nix ] ;}
+      { buildInputs = [ pkgs.nodejs-12_x pkgs.openssl pkgs.nix pkgs.jq] ;}
       ''
+
+        old_sha512=$(cat ${tarball} |\
+          openssl dgst -sha512 -binary |\
+          openssl base64 -A)
+
+        old_sha1=$(cat ${tarball} |\
+          openssl dgst -sha1 -binary |\
+          openssl base64 -A)
+
+        TEMP_UNPACK=$(mktemp -d)
+
+        tar -C $TEMP_UNPACK -xzf ${tarball}
+
+        cat $TEMP_UNPACK/*/package.json | \
+          jq -r ' select(.bin) | .bin | .[]' | \
+            while IFS= read -r bin; do
+              # https://github.com/NixOS/nixpkgs/pull/60215
+              chmod +w $(dirname "$TEMP_UNPACK/*/$bin")
+              chmod +x $TEMP_UNPACK/*/$bin
+              patchShebangs $TEMP_UNPACK/*/$bin
+            done || echo not an array
+
+        cat $TEMP_UNPACK/*/package.json | \
+          jq -r ' select(.bin) | .bin' | \
+            while IFS= read -r bin; do
+              # https://github.com/NixOS/nixpkgs/pull/60215
+              chmod +w $(dirname "$TEMP_UNPACK/*/$bin")
+              chmod +x $TEMP_UNPACK/*/$bin
+              patchShebangs $TEMP_UNPACK/*/$bin
+            done || echo not a string
+
+        echo "REPACKING"
+        # XXX: huge hack to "pretend" we strip one component
+        # really instead of having "package/README.md", ... we have
+        # "./README.md" (which is what npm expects, since it just strips the
+        # first component
+        tar -czf tarball.tar.gz -C $TEMP_UNPACK/* .
+
         export HOME=$(mktemp -d)
-        echo caching ${tarball}
-        npm cache add ${tarball}
+
+        echo caching patched ${tarball}
+        npm cache add tarball.tar.gz
 
         mkdir -p $out
         cp -r $HOME/.npm/_cacache $out
 
-        sha512=$(cat ${tarball} |\
+        new_sha512=$(cat tarball.tar.gz |\
           openssl dgst -sha512 -binary |\
           openssl base64 -A)
 
-        sha1=$(cat ${tarball} |\
-          openssl dgst -sha1 -binary |\
-          openssl base64 -A)
-
-        key=$(nix-hash ${tarball})
+        key=$(nix-hash tarball.tar.gz)
 
         mkdir -p $out/.napalm-support/$key
 
-        echo "{\"sha512\":\"$sha512\",\"sha1\":\"$sha1\"}" > \
+        echo '
+          { "old_sha512": "<old_sha512>",
+            "old_sha1": "<old_sha1>",
+            "new_sha512": "<new_sha512>"
+          } ' > $out/.napalm-support/$key/checksums.json
+
+        sed -i "s:<old_sha512>:$old_sha512:" \
+          $out/.napalm-support/$key/checksums.json
+        sed -i "s:<old_sha1>:$old_sha1:" \
+          $out/.napalm-support/$key/checksums.json
+        sed -i "s:<new_sha512>:$new_sha512:" \
           $out/.napalm-support/$key/checksums.json
       '';
 
   prepareCache = tarballs:
     pkgs.symlinkJoin
-      { name = "cacache"; paths = map prepareCrate tarballs; };
+      { name = "cacache"; paths = map preparePackage tarballs; };
 
   snapshotTarballs = snapshot:
     pkgs.lib.concatMap builtins.attrValues (builtins.attrValues snapshot);
@@ -184,16 +229,21 @@ with rec
         time cp -Lr --no-preserve mode ${crates}/_cacache $HOME/.npm
       fi
 
+      echo verifying cache
+      npm cache verify
+
       sedscript=$(mktemp)
 
       echo "creating sed script"
-
       # Replaces all sha1 integrities with sha512
       cat ${crates}/.napalm-support/*/checksums.json |\
-        jq -r '. | "s:sha1-\(.sha1):sha512-\(.sha512):"' >> $sedscript
+        jq -r '. |
+          [ "s:sha1-\(.old_sha1):sha512-\(.new_sha512):",
+            "s:sha512-\(.old_sha512):sha512-\(.new_sha512):"
+          ] | .[]
+          ' >> $sedscript
 
       echo patching lock files
-
       if [ -f package-lock.json ]
       then
         echo patching package-lock.json
@@ -204,9 +254,6 @@ with rec
         echo patching npm-shrinkwrap.json
         time sed -i -f $sedscript npm-shrinkwrap.json
       fi
-
-      echo verifying cache
-      npm cache verify
 
       export CPATH="${pkgs.nodejs-12_x}/include/node:$CPATH"
 
