@@ -88,22 +88,23 @@ with rec
         tar -C $TEMP_UNPACK -xzf ${tarball}
 
         cat $TEMP_UNPACK/*/package.json | \
-          jq -r ' select(.bin) | .bin | .[]' | \
+          jq -r ' select(.bin) | .bin | select(type == "object") | .[]' | \
             while IFS= read -r bin; do
+              echo $bin
               # https://github.com/NixOS/nixpkgs/pull/60215
               chmod +w $(dirname "$TEMP_UNPACK/*/$bin")
               chmod +x $TEMP_UNPACK/*/$bin
               patchShebangs $TEMP_UNPACK/*/$bin
-            done || echo not an array
+            done
 
         cat $TEMP_UNPACK/*/package.json | \
-          jq -r ' select(.bin) | .bin' | \
+          jq -r ' select(.bin) | .bin | select(type == "string")' | \
             while IFS= read -r bin; do
               # https://github.com/NixOS/nixpkgs/pull/60215
               chmod +w $(dirname "$TEMP_UNPACK/*/$bin")
               chmod +x $TEMP_UNPACK/*/$bin
               patchShebangs $TEMP_UNPACK/*/$bin
-            done || echo not a string
+            done
 
         echo "REPACKING"
         # XXX: huge hack to "pretend" we strip one component
@@ -169,7 +170,7 @@ with rec
     src:
     attrs@
     { packageLock ? null
-    , npmCommands ? [ "npm install" ]
+    , npmCommands ? [ "npm install --offline" ]
     , ... }:
     with rec
     { actualPackageLock =
@@ -353,7 +354,7 @@ with rec
       { sources = import ./nix/sources.nix;
         bwDrv = buildPackage sources.bitwarden-cli
           { npmCommands =
-              [ "npm install"
+              [ "npm install --offline"
                 "npm run build"
               ];
           };
