@@ -109,7 +109,7 @@ with rec
       snapshot = pkgs.writeText "npm-snapshot"
         (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
       buildInputs =
-        [ pkgs.nodejs-10_x
+        [ pkgs.nodejs
           haskellPackages.napalm-registry
           pkgs.fswatch
           pkgs.gcc
@@ -150,7 +150,7 @@ with rec
 
       npm config set registry 'http://localhost:8081'
 
-      export CPATH="${pkgs.nodejs-10_x}/include/node:$CPATH"
+      export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
       echo "Installing npm package"
 
