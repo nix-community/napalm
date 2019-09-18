@@ -114,7 +114,7 @@ with rec
           pkgs.fswatch
           pkgs.gcc
           pkgs.jq
-          pkgs.netcat
+          pkgs.netcat-gnu
         ];
       newBuildInputs =
           if builtins.hasAttr "buildInputs" attrs
