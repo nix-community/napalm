@@ -160,7 +160,7 @@ with rec
         while IFS= read -r c
         do
           echo "Runnig npm command: $c"
-          $c
+          $c || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
           echo "Overzealously patching shebangs"
           if [ -d node_modules ]; then find node_modules -type d -name bin | \
             while read file; do patchShebangs $file; done; fi
