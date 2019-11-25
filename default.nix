@@ -78,8 +78,8 @@ with rec
         hasPackageLock = builtins.hasAttr "package-lock.json" toplevel;
         hasNpmShrinkwrap = builtins.hasAttr "npm-shrinkwrap.json" toplevel;
       };
-    if hasPackageLock then "${src}/package-lock.json"
-    else if hasNpmShrinkwrap then "${src}/npm-shrinkwrap.json"
+    if hasPackageLock then src + "/package-lock.json"
+    else if hasNpmShrinkwrap then src + "/npm-shrinkwrap.json"
     else null;
 
   # Builds an npm package, placing all the executables the 'bin' directory.
