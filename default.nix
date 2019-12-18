@@ -112,7 +112,6 @@ with rec
         [ pkgs.nodejs
           haskellPackages.napalm-registry
           pkgs.fswatch
-          pkgs.gcc
           pkgs.jq
           pkgs.netcat-gnu
         ];
