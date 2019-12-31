@@ -272,7 +272,7 @@ in
 
       bwDrv = buildPackage sources.bitwarden-cli {
         npmCommands = [
-          "npm install"
+          "npm install --ignore-scripts"
           "npm run build"
         ];
       };
