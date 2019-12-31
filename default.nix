@@ -94,6 +94,7 @@ let
     , packageLock ? null
     , npmCommands ? [ "npm install" ]
     , buildInputs ? []
+    , installPhase ? null
     , ...
     }:
       let
@@ -170,7 +171,7 @@ let
             runHook postBuild
           '';
 
-          installPhase = ''
+          installPhase = attrs.installPhase or ''
             runHook preInstall
 
             napalm_INSTALL_DIR=''${napalm_INSTALL_DIR:-$out/_napalm-install}
@@ -256,28 +257,14 @@ in
   deckdeckgo-starter =
     let
       sources = import ./nix/sources.nix;
-      starterKitDrv =
-        buildPackage
-          sources.deckdeckgo-starter
-          { npmCommands = [ "npm install" "npm run build" ]; };
-
-      starterKit = starterKitDrv.overrideAttrs (
-        oldAttrs: {
-          outputs = [ "out" "dist" ];
-          postInstall = "ln -s $napalm_INSTALL_DIR/dist $dist";
-        }
-      );
     in
-      pkgs.runCommand "deckdeckgo-starter" {}
-        ''
-          if [ ! -f ${starterKit.dist}/index.html ]
-          then
-            echo "Dist wasn't generated"
-            exit 1
-          else
-            touch $out
-          fi
+      buildPackage sources.deckdeckgo-starter {
+        name = "deckdeckgo-starter";
+        npmCommands = [ "npm install" "npm run build" ];
+        installPhase = ''
+          mv dist $out
         '';
+      };
 
   bitwarden-cli =
     let
