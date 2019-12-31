@@ -90,7 +90,8 @@ let
   buildPackage =
     src:
     attrs@
-    { packageLock ? null
+    { name ? "build-npm-package"
+    , packageLock ? null
     , npmCommands ? [ "npm install" ]
     , buildInputs ? []
     , ...
@@ -122,12 +123,10 @@ let
         ];
       in
         pkgs.stdenv.mkDerivation {
-          inherit src;
+          # TODO: Use package name in derivation name
+          inherit name src;
           npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
           buildInputs = newBuildInputs;
-
-          # TODO: Use package name in derivation name
-          name = "build-npm-package";
 
           configurePhase = "export HOME=$(mktemp -d)";
 
