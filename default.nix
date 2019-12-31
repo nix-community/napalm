@@ -109,6 +109,13 @@ let
     , ...
     }:
       let
+        # remove all the attributes that are not part of the normal
+        # stdenv.mkDerivation interface
+        mkDerivationAttrs = builtins.removeAttrs attrs [
+          "packageLock"
+          "npmCommands"
+        ];
+
         actualPackageLock =
           if ! isNull packageLock then packageLock
           else if ! isNull discoveredPackageLock then discoveredPackageLock
@@ -153,7 +160,7 @@ let
         # package name and version from the source package.json
         name = attrs.name or "${reformatPackageName pname}-${version}";
       in
-        pkgs.stdenv.mkDerivation {
+        pkgs.stdenv.mkDerivation (mkDerivationAttrs // {
           inherit name src;
           npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
           buildInputs = newBuildInputs;
@@ -228,7 +235,7 @@ let
 
             runHook postInstall
           '';
-        };
+        });
 
   napalm-registry-source = pkgs.lib.cleanSource ./napalm-registry;
 
@@ -299,24 +306,20 @@ in
     let
       sources = import ./nix/sources.nix;
 
-      bwDrv = buildPackage sources.bitwarden-cli {
+      bw = buildPackage sources.bitwarden-cli {
         npmCommands = [
           "npm install --ignore-scripts"
           "npm run build"
         ];
-      };
 
-      bw = bwDrv.overrideAttrs (
-        oldAttrs: {
-          # XXX: niv doesn't support submodules :'(
-          # we work around that by skipping "npm run sub:init" and installing
-          # the submodule manually
-          postUnpack = ''
-            rmdir $sourceRoot/jslib
-            cp -r ${sources.bitwarden-jslib} $sourceRoot/jslib
-          '';
-        }
-      );
+        # XXX: niv doesn't support submodules :'(
+        # we work around that by skipping "npm run sub:init" and installing
+        # the submodule manually
+        postUnpack = ''
+          rmdir $sourceRoot/jslib
+          cp -r ${sources.bitwarden-jslib} $sourceRoot/jslib
+        '';
+      };
     in
       pkgs.runCommand "bitwarden-cli" { buildInputs = [ bw ]; }
         ''
