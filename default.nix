@@ -92,6 +92,7 @@ let
     attrs@
     { packageLock ? null
     , npmCommands ? [ "npm install" ]
+    , buildInputs ? []
     , ...
     }:
       let
@@ -112,18 +113,13 @@ let
         snapshot = pkgs.writeText "npm-snapshot"
           (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
 
-        buildInputs = [
+        newBuildInputs = buildInputs ++ [
           haskellPackages.napalm-registry
           pkgs.fswatch
           pkgs.jq
           pkgs.netcat-gnu
           pkgs.nodejs
         ];
-
-        newBuildInputs =
-          if builtins.hasAttr "buildInputs" attrs
-          then attrs.buildInputs ++ buildInputs
-          else buildInputs;
       in
         pkgs.stdenv.mkDerivation {
           inherit src;
