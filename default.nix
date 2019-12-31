@@ -83,6 +83,17 @@ let
       else if hasNpmShrinkwrap then src + "/npm-shrinkwrap.json"
       else null;
 
+  # Returns the package.json as nix values. If not found, returns an empty
+  # attrset.
+  readPackageJSON = src:
+    let
+      toplevel = builtins.readDir src;
+      hasPackageJSON = builtins.hasAttr "package.json" toplevel;
+    in
+      if hasPackageJSON then pkgs.lib.importJSON (src + "/package.json")
+      else
+        builtins.trace "WARN: package.json not found in ${toString src}" {};
+
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
   #
@@ -90,7 +101,7 @@ let
   buildPackage =
     src:
     attrs@
-    { name ? "build-npm-package"
+    { name ? null
     , packageLock ? null
     , npmCommands ? [ "npm install" ]
     , buildInputs ? []
@@ -122,9 +133,27 @@ let
           pkgs.netcat-gnu
           pkgs.nodejs
         ];
+
+        reformatPackageName = pname:
+          let
+            # regex adapted from `validate-npm-package-name`
+            # will produce 3 parts e.g.
+            # "@someorg/somepackage" -> [ "@someorg/" "someorg" "somepackage" ]
+            # "somepackage" -> [ null null "somepackage" ]
+            parts = builtins.tail (builtins.match "^(@([^/]+)/)?([^/]+)$" pname);
+            # if there is no organisation we need to filter out null values.
+            non-null = builtins.filter (x: x != null) parts;
+          in builtins.concatStringsSep "-" non-null;
+
+        packageJSON = readPackageJSON src;
+        pname = packageJSON.name or "build-npm-package";
+        version = packageJSON.version or "0.0.0";
+
+        # If name is not specified, read the package.json to load the
+        # package name and version from the source package.json
+        name = attrs.name or "${reformatPackageName pname}-${version}";
       in
         pkgs.stdenv.mkDerivation {
-          # TODO: Use package name in derivation name
           inherit name src;
           npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
           buildInputs = newBuildInputs;
