@@ -357,4 +357,100 @@ in
           bw --help
           touch $out
         '';
+
+  # This tests and also serves as an example on how to handle bin
+  # dependencies.
+  #
+  # Typically bin dependencies are shipped with the npm package. These
+  # packages have a postinstall step that checks if the binary works and
+  # fallbacks to compiling from source otherwise. Because the binary isn't
+  # linked against NixOS paths the binary fails.
+  #
+  # So here we use the approach of skipping the postinstall, then using
+  # autopatchelf to fix all the binaries, and finally run the postinstall
+  # manually.
+  #
+  # NOTE: there are other phases such as "preinstall" and "install" that are
+  #       being ignored right now. In my opinion any npm package that depends
+  #       on those is broken.
+  #       See https://docs.npmjs.com/misc/scripts
+  bin-deps = buildPackage ./test/bin-deps {
+    nativeBuildInputs = with pkgs; [
+      autoPatchelfHook
+
+      nodejs.passthru.python
+
+      # These tend to be needed when
+      autoconf
+      automake
+      gettext
+      gnum4
+      gnused
+      nasm
+      pkgconfig
+    ];
+
+    postConfigure = ''
+      ${nodejs-headers-installer}
+    '';
+
+    buildInputs = with pkgs; [
+      libGL
+      libpng
+      libsass
+      libtool
+      xlibs.libX11
+      xlibs.libXi
+      xlibs.libXxf86vm
+      zlib
+    ];
+
+    npmCommands = [
+      # Just download and unpack all the npm packages.
+      "npm install --ignore-scripts"
+    ];
+
+    postBuild = ''
+      mkdir -p node_modules/cwebp-bin/vendor
+      ln -s ${pkgs.libwebp}/bin/cwebp node_modules/cwebp-bin/vendor/cwebp
+
+      mkdir -p node_modules/mozjpeg/vendor
+      ln -s ${pkgs.mozjpeg}/bin/cjpeg node_modules/mozjpeg/vendor/cjpeg
+
+      mkdir -p node_modules/optipng-bin/vendor
+      ln -s ${pkgs.optipng}/bin/optipng node_modules/optipng-bin/vendor/optipng
+
+      ln -s ${pkgs.pngquant}/bin/pngquant node_modules/pngquant-bin/vendor/pngquant
+
+      runPostinstall() (
+        cd "$1"
+        if ! [[ -f package.json ]]; then
+          return
+        fi
+        postinstall=$(jq -r .scripts.postinstall < package.json)
+        if [[ $postinstall = null ]]; then
+          return
+        fi
+        echo "$1: npm run postinstall"
+        npm run postinstall
+      )
+
+      # Fix all the binaries with the .so from buildInputs. Magic!
+      autoPatchelf node_modules
+
+      # Now that all the binaries are patched, run all the postinstall
+      # scripts.
+      for dep in node_modules/*; do
+        runPostinstall "$dep"
+      done
+
+      # Test that things are working
+      npm run build
+    '';
+
+    installPhase = ''
+      mkdir $out
+      cp -r node_modules $out/
+    '';
+  };
 }
