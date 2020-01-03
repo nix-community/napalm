@@ -300,6 +300,16 @@ in
         installPhase = ''
           mv dist $out
         '';
+        doInstallCheck = true;
+        installCheckPhase = ''
+          if [[ ! -f $out/index.html ]]
+          then
+            echo "Dist wasn't generated"
+            exit 1
+          else
+            echo "All good!"
+          fi
+        '';
       };
 
   bitwarden-cli =
