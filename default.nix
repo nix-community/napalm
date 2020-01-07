@@ -167,7 +167,13 @@ let
             npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
             buildInputs = newBuildInputs;
 
-            configurePhase = "export HOME=$(mktemp -d)";
+            configurePhase = ''
+              runHook preConfigure
+
+              export HOME=$(mktemp -d)
+
+              runHook postConfigure
+            '';
 
             buildPhase = ''
               runHook preBuild
