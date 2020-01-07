@@ -1,2 +1,2 @@
 { pkgs ? import ./nix {} }:
-(import ./default.nix { inherit pkgs; } ).napalm-registry-devshell
+(import ./default.nix { inherit pkgs; }).napalm-registry-devshell
