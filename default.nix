@@ -150,7 +150,8 @@ let
             parts = builtins.tail (builtins.match "^(@([^/]+)/)?([^/]+)$" pname);
             # if there is no organisation we need to filter out null values.
             non-null = builtins.filter (x: x != null) parts;
-          in builtins.concatStringsSep "-" non-null;
+          in
+            builtins.concatStringsSep "-" non-null;
 
         packageJSON = readPackageJSON src;
         pname = packageJSON.name or "build-npm-package";
@@ -160,82 +161,84 @@ let
         # package name and version from the source package.json
         name = attrs.name or "${reformatPackageName pname}-${version}";
       in
-        pkgs.stdenv.mkDerivation (mkDerivationAttrs // {
-          inherit name src;
-          npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
-          buildInputs = newBuildInputs;
+        pkgs.stdenv.mkDerivation (
+          mkDerivationAttrs // {
+            inherit name src;
+            npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
+            buildInputs = newBuildInputs;
 
-          configurePhase = "export HOME=$(mktemp -d)";
+            configurePhase = "export HOME=$(mktemp -d)";
 
-          buildPhase = ''
-            runHook preBuild
+            buildPhase = ''
+              runHook preBuild
 
-            # TODO: why does the unpacker not set the sourceRoot?
-            sourceRoot=$PWD
+              # TODO: why does the unpacker not set the sourceRoot?
+              sourceRoot=$PWD
 
-            echo "Starting napalm registry"
+              echo "Starting napalm registry"
 
-            napalm-registry --snapshot ${snapshot} &
-            napalm_REGISTRY_PID=$!
+              napalm-registry --snapshot ${snapshot} &
+              napalm_REGISTRY_PID=$!
 
-            while ! nc -z localhost 8081; do
-              echo waiting for registry to be alive on port 8081
-              sleep 1
-            done
-
-            npm config set registry 'http://localhost:8081'
-
-            export CPATH="${pkgs.nodejs}/include/node:$CPATH"
-
-            echo "Installing npm package"
-
-            echo "$npmCommands"
-
-            echo "$npmCommands" | \
-              while IFS= read -r c
-              do
-                echo "Runnig npm command: $c"
-                $c || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
-                echo "Overzealously patching shebangs"
-                if [ -d node_modules ]; then find node_modules -type d -name bin | \
-                  while read file; do patchShebangs $file; done; fi
+              while ! nc -z localhost 8081; do
+                echo waiting for registry to be alive on port 8081
+                sleep 1
               done
 
-            echo "Shutting down napalm registry"
-            kill $napalm_REGISTRY_PID
+              npm config set registry 'http://localhost:8081'
 
-            runHook postBuild
-          '';
+              export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
-          installPhase = attrs.installPhase or ''
-            runHook preInstall
+              echo "Installing npm package"
 
-            napalm_INSTALL_DIR=''${napalm_INSTALL_DIR:-$out/_napalm-install}
-            mkdir -p $napalm_INSTALL_DIR
-            cp -r $sourceRoot/* $napalm_INSTALL_DIR
+              echo "$npmCommands"
 
-            echo "Patching package executables"
-            cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | .[]' | \
-              while IFS= read -r bin; do
-                # https://github.com/NixOS/nixpkgs/pull/60215
-                chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
-                chmod +x $napalm_INSTALL_DIR/$bin
-                patchShebangs $napalm_INSTALL_DIR/$bin
-              done
+              echo "$npmCommands" | \
+                while IFS= read -r c
+                do
+                  echo "Runnig npm command: $c"
+                  $c || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
+                  echo "Overzealously patching shebangs"
+                  if [ -d node_modules ]; then find node_modules -type d -name bin | \
+                    while read file; do patchShebangs $file; done; fi
+                done
 
-            mkdir -p $out/bin
+              echo "Shutting down napalm registry"
+              kill $napalm_REGISTRY_PID
 
-            echo "Creating package executable symlinks in bin"
-            cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
-              while IFS= read -r key; do
-                target=$(cat $napalm_INSTALL_DIR/package.json | jq -r --arg key "$key" '.bin[$key]')
-                echo creating symlink for npm executable $key to $target
-                ln -s $napalm_INSTALL_DIR/$target $out/bin/$key
-              done
+              runHook postBuild
+            '';
 
-            runHook postInstall
-          '';
-        });
+            installPhase = attrs.installPhase or ''
+              runHook preInstall
+
+              napalm_INSTALL_DIR=''${napalm_INSTALL_DIR:-$out/_napalm-install}
+              mkdir -p $napalm_INSTALL_DIR
+              cp -r $sourceRoot/* $napalm_INSTALL_DIR
+
+              echo "Patching package executables"
+              cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | .[]' | \
+                while IFS= read -r bin; do
+                  # https://github.com/NixOS/nixpkgs/pull/60215
+                  chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
+                  chmod +x $napalm_INSTALL_DIR/$bin
+                  patchShebangs $napalm_INSTALL_DIR/$bin
+                done
+
+              mkdir -p $out/bin
+
+              echo "Creating package executable symlinks in bin"
+              cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
+                while IFS= read -r key; do
+                  target=$(cat $napalm_INSTALL_DIR/package.json | jq -r --arg key "$key" '.bin[$key]')
+                  echo creating symlink for npm executable $key to $target
+                  ln -s $napalm_INSTALL_DIR/$target $out/bin/$key
+                done
+
+              runHook postInstall
+            '';
+          }
+        );
 
   napalm-registry-source = pkgs.lib.cleanSource ./napalm-registry;
 
