@@ -266,13 +266,24 @@ let
       echo "  > repl"
     '';
   };
+
+  nodejs-headers-installer =
+    with pkgs;
+    writeScript "nodejs-headers-installer" ''
+      echo "* Installing nodejs headers in $HOME/.node-gyp/${nodejs.version} ..."
+      mkdir -p $HOME/.node-gyp/${nodejs.version}
+      echo 9 > $HOME/.node-gyp/${nodejs.version}/installVersion
+      ln -sv ${nodejs}/include $HOME/.node-gyp/${nodejs.version}/include
+    '';
 in
 {
   inherit
     buildPackage
     napalm-registry-devshell
+    nodejs-headers-installer
     snapshotFromPackageLockJson
     ;
+
 
   napalm-registry = haskellPackages.napalm-registry;
 
