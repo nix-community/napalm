@@ -6,6 +6,31 @@
 
 { pkgs ? import ./nix {} }:
 let
+  # Returns `true` if `path` exists.
+  # TODO: use `builtins.pathExists` once
+  # https://github.com/NixOS/nix/pull/3012 has landed and is generally
+  # available
+  pathExists = if pkgs.lib.versionAtLeast builtins.nixVersion "2.3" then builtins.pathExists else path:
+    let
+      all = pkgs.lib.all (x: x);
+      isOk = part:
+        let
+          dir = builtins.dirOf part;
+          basename = builtins.unsafeDiscardStringContext (builtins.baseNameOf part);
+          dirContent = builtins.readDir dir;
+        in
+          builtins.hasAttr basename dirContent && # XXX: this may not work if the directory is a symlink
+          (part == path || dirContent.${basename} == "directory");
+      parts =
+        let
+          # [ "" "nix" "store" "123123" "foo" "bar" ]
+          parts = pkgs.lib.splitString "/" path;
+          len = pkgs.lib.length parts;
+        in
+          map (n: pkgs.lib.concatStringsSep "/" (pkgs.lib.take n parts)) (pkgs.lib.range 3 len);
+    in
+      all (map isOk parts);
+
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
   # following:
@@ -73,26 +98,17 @@ let
 
   # Returns either the package-lock or the npm-shrinkwrap. If none is found
   # returns null.
-  findPackageLock = src:
-    let
-      toplevel = builtins.readDir src;
-      hasPackageLock = builtins.hasAttr "package-lock.json" toplevel;
-      hasNpmShrinkwrap = builtins.hasAttr "npm-shrinkwrap.json" toplevel;
-    in
-      if hasPackageLock then src + "/package-lock.json"
-      else if hasNpmShrinkwrap then src + "/npm-shrinkwrap.json"
-      else null;
+  findPackageLock = root:
+    if pathExists (root + "/package-lock.json") then root + "/package-lock.json"
+    else if pathExists (root + "/npm-shrinkwrap.json") then root + "/npm-shrinkwrap.json"
+    else null;
 
   # Returns the package.json as nix values. If not found, returns an empty
   # attrset.
-  readPackageJSON = src:
-    let
-      toplevel = builtins.readDir src;
-      hasPackageJSON = builtins.hasAttr "package.json" toplevel;
-    in
-      if hasPackageJSON then pkgs.lib.importJSON (src + "/package.json")
+  readPackageJSON = root:
+    if pathExists (root + "/package.json") then pkgs.lib.importJSON (root + "/package.json")
       else
-        builtins.trace "WARN: package.json not found in ${toString src}" {};
+        builtins.trace "WARN: package.json not found in ${toString root}" {};
 
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
@@ -102,6 +118,10 @@ let
     src:
     attrs@
     { name ? null
+      # Used by `napalm` to read the `package-lock.json`, `npm-shrinkwrap.json`
+      # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
+      # is not set, it defaults to `src`.
+    , root ? src
     , packageLock ? null
     , npmCommands ? [ "npm install" ]
     , buildInputs ? []
@@ -128,7 +148,7 @@ let
             Otherwise, you will see this error message.
           '';
 
-        discoveredPackageLock = findPackageLock src;
+        discoveredPackageLock = findPackageLock root;
 
         snapshot = pkgs.writeText "npm-snapshot"
           (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
@@ -152,7 +172,7 @@ let
             non-null = builtins.filter (x: x != null) parts;
           in builtins.concatStringsSep "-" non-null;
 
-        packageJSON = readPackageJSON src;
+        packageJSON = readPackageJSON root;
         pname = packageJSON.name or "build-npm-package";
         version = packageJSON.version or "0.0.0";
 
