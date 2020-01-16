@@ -98,17 +98,17 @@ let
 
   # Returns either the package-lock or the npm-shrinkwrap. If none is found
   # returns null.
-  findPackageLock = src:
-    if pathExists (src + "/package-lock.json") then src + "/package-lock.json"
-    else if pathExists (src + "/npm-shrinkwrap.json") then src + "/npm-shrinkwrap.json"
+  findPackageLock = root:
+    if pathExists (root + "/package-lock.json") then root + "/package-lock.json"
+    else if pathExists (root + "/npm-shrinkwrap.json") then root + "/npm-shrinkwrap.json"
     else null;
 
   # Returns the package.json as nix values. If not found, returns an empty
   # attrset.
-  readPackageJSON = src:
-    if pathExists (src + "/package.json") then pkgs.lib.importJSON (src + "/package.json")
+  readPackageJSON = root:
+    if pathExists (root + "/package.json") then pkgs.lib.importJSON (root + "/package.json")
       else
-        builtins.trace "WARN: package.json not found in ${toString src}" {};
+        builtins.trace "WARN: package.json not found in ${toString root}" {};
 
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
@@ -118,6 +118,10 @@ let
     src:
     attrs@
     { name ? null
+      # Used by `napalm` to read the `package-lock.json`, `npm-shrinkwrap.json`
+      # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
+      # is not set, it defaults to `src`.
+    , root ? src
     , packageLock ? null
     , npmCommands ? [ "npm install" ]
     , buildInputs ? []
@@ -144,7 +148,7 @@ let
             Otherwise, you will see this error message.
           '';
 
-        discoveredPackageLock = findPackageLock src;
+        discoveredPackageLock = findPackageLock root;
 
         snapshot = pkgs.writeText "npm-snapshot"
           (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
@@ -168,7 +172,7 @@ let
             non-null = builtins.filter (x: x != null) parts;
           in builtins.concatStringsSep "-" non-null;
 
-        packageJSON = readPackageJSON src;
+        packageJSON = readPackageJSON root;
         pname = packageJSON.name or "build-npm-package";
         version = packageJSON.version or "0.0.0";
 
