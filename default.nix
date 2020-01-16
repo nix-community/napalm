@@ -6,6 +6,31 @@
 
 { pkgs ? import ./nix {} }:
 let
+  # Returns `true` if `path` exists.
+  # TODO: use `builtins.pathExists` once
+  # https://github.com/NixOS/nix/pull/3012 has landed and is generally
+  # available
+  pathExists = if pkgs.lib.versionAtLeast builtins.nixVersion "2.3" then builtins.pathExists else path:
+    let
+      all = pkgs.lib.all (x: x);
+      isOk = part:
+        let
+          dir = builtins.dirOf part;
+          basename = builtins.unsafeDiscardStringContext (builtins.baseNameOf part);
+          dirContent = builtins.readDir dir;
+        in
+          builtins.hasAttr basename dirContent && # XXX: this may not work if the directory is a symlink
+          (part == path || dirContent.${basename} == "directory");
+      parts =
+        let
+          # [ "" "nix" "store" "123123" "foo" "bar" ]
+          parts = pkgs.lib.splitString "/" path;
+          len = pkgs.lib.length parts;
+        in
+          map (n: pkgs.lib.concatStringsSep "/" (pkgs.lib.take n parts)) (pkgs.lib.range 3 len);
+    in
+      all (map isOk parts);
+
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
   # following:
@@ -74,23 +99,14 @@ let
   # Returns either the package-lock or the npm-shrinkwrap. If none is found
   # returns null.
   findPackageLock = src:
-    let
-      toplevel = builtins.readDir src;
-      hasPackageLock = builtins.hasAttr "package-lock.json" toplevel;
-      hasNpmShrinkwrap = builtins.hasAttr "npm-shrinkwrap.json" toplevel;
-    in
-      if hasPackageLock then src + "/package-lock.json"
-      else if hasNpmShrinkwrap then src + "/npm-shrinkwrap.json"
-      else null;
+    if pathExists (src + "/package-lock.json") then src + "/package-lock.json"
+    else if pathExists (src + "/npm-shrinkwrap.json") then src + "/npm-shrinkwrap.json"
+    else null;
 
   # Returns the package.json as nix values. If not found, returns an empty
   # attrset.
   readPackageJSON = src:
-    let
-      toplevel = builtins.readDir src;
-      hasPackageJSON = builtins.hasAttr "package.json" toplevel;
-    in
-      if hasPackageJSON then pkgs.lib.importJSON (src + "/package.json")
+    if pathExists (src + "/package.json") then pkgs.lib.importJSON (src + "/package.json")
       else
         builtins.trace "WARN: package.json not found in ${toString src}" {};
 
