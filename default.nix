@@ -235,6 +235,15 @@ let
                   ln -s $napalm_INSTALL_DIR/$bin $out/bin/$key
                 done < <(jq -cMr 'keys[]' <<<"$package_bins")
                 ;;
+              string)
+                mkdir -p $out/bin
+                bin=$(jq -cMr <<<"$package_bins")
+                chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
+                chmod +x $napalm_INSTALL_DIR/$bin
+                patchShebangs $napalm_INSTALL_DIR/$bin
+
+                ln -s "$napalm_INSTALL_DIR/$bin" "$out/bin/$(basename $bin)"
+                ;;
               null)
                 echo "No binaries to package"
                 ;;
@@ -305,11 +314,18 @@ in
   prettydiff =
     let
       sources = import ./nix/sources.nix;
+      prettydiff = buildPackage sources.prettydiff
+        { npmCommands =
+            [ "npm install"
+            ];
+          postBuild = "tsc --pretty && node js/services build";
+          nativeBuildInputs = [ pkgs.nodePackages.typescript pkgs.git ];
+        };
     in
       pkgs.runCommand "prettydiff-test" {}
         ''
           export HOME=$(mktemp -d)
-          ${buildPackage sources.prettydiff {}}/bin/prettydiff --help
+          ${prettydiff}/bin/prettydiff help
           touch $out
         '';
 
