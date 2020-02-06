@@ -215,23 +215,44 @@ let
             cp -r $sourceRoot/* $napalm_INSTALL_DIR
 
             echo "Patching package executables"
-            cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | .[]' | \
-              while IFS= read -r bin; do
-                # https://github.com/NixOS/nixpkgs/pull/60215
+            package_bins=$(jq -cM '.bin' <"$napalm_INSTALL_DIR/package.json")
+            echo "bins: $package_bins"
+            package_bins_type=$(jq -cMr type <<<"$package_bins")
+            echo "bin type: $package_bins_type"
+
+            case "$package_bins_type" in
+              object)
+                mkdir -p $out/bin
+
+                echo "Creating package executable symlinks in bin"
+                while IFS= read -r key; do
+                  bin=$(jq -cMr --arg key "$key" '.[$key]' <<<"$package_bins")
+                  echo "patching and symlinking binary $key -> $bin"
+                  # https://github.com/NixOS/nixpkgs/pull/60215
+                  chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
+                  chmod +x $napalm_INSTALL_DIR/$bin
+                  patchShebangs $napalm_INSTALL_DIR/$bin
+                  ln -s $napalm_INSTALL_DIR/$bin $out/bin/$key
+                done < <(jq -cMr 'keys[]' <<<"$package_bins")
+                ;;
+              string)
+                mkdir -p $out/bin
+                bin=$(jq -cMr <<<"$package_bins")
                 chmod +w $(dirname "$napalm_INSTALL_DIR/$bin")
                 chmod +x $napalm_INSTALL_DIR/$bin
                 patchShebangs $napalm_INSTALL_DIR/$bin
-              done
 
-            mkdir -p $out/bin
-
-            echo "Creating package executable symlinks in bin"
-            cat $napalm_INSTALL_DIR/package.json | jq -r ' select(.bin) | .bin | keys[]' | \
-              while IFS= read -r key; do
-                target=$(cat $napalm_INSTALL_DIR/package.json | jq -r --arg key "$key" '.bin[$key]')
-                echo creating symlink for npm executable $key to $target
-                ln -s $napalm_INSTALL_DIR/$target $out/bin/$key
-              done
+                ln -s "$napalm_INSTALL_DIR/$bin" "$out/bin/$(basename $bin)"
+                ;;
+              null)
+                echo "No binaries to package"
+                ;;
+              *)
+                echo "unknown type for binaries: $package_bins_type"
+                echo "please submit an issue: https://github.com/nmattia/napalm/issues/new"
+                exit 1
+                ;;
+            esac
 
             runHook postInstall
           '';
