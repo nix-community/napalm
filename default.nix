@@ -311,24 +311,6 @@ in
           touch $out
         '';
 
-  prettydiff =
-    let
-      sources = import ./nix/sources.nix;
-      prettydiff = buildPackage sources.prettydiff
-        { npmCommands =
-            [ "npm install"
-            ];
-          postBuild = "tsc --pretty && node js/services build";
-          nativeBuildInputs = [ pkgs.nodePackages.typescript pkgs.git ];
-        };
-    in
-      pkgs.runCommand "prettydiff-test" {}
-        ''
-          export HOME=$(mktemp -d)
-          ${prettydiff}/bin/prettydiff help
-          touch $out
-        '';
-
   deckdeckgo-starter =
     let
       sources = import ./nix/sources.nix;

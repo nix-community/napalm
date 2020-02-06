@@ -70,17 +70,5 @@
         "type": "tarball",
         "url": "https://github.com/NixOS/nixpkgs-channels/archive/eab4ee0c27c5c6f622aa0ca55091c394a9e33edd.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    },
-    "prettydiff": {
-        "branch": "master",
-        "description": "Beautifier and language aware code comparison tool for many languages. It also minifies and a few other things.",
-        "homepage": "http://prettydiff.com/",
-        "owner": "prettydiff",
-        "repo": "prettydiff",
-        "rev": "0d5b434434f13377f80470924fb36d9ebb0b0233",
-        "sha256": "1lgb2hh7qpa9sn7gd7fa7yw2ak6gjpfkhxvnvbncj9w8ilmd7rmn",
-        "type": "tarball",
-        "url": "https://github.com/prettydiff/prettydiff/archive/0d5b434434f13377f80470924fb36d9ebb0b0233.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
