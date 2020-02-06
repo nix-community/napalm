@@ -215,8 +215,10 @@ let
             cp -r $sourceRoot/* $napalm_INSTALL_DIR
 
             echo "Patching package executables"
-            package_bins=$(jq -cMr '.bin' <"$napalm_INSTALL_DIR/package.json")
+            package_bins=$(jq -cM '.bin' <"$napalm_INSTALL_DIR/package.json")
+            echo "bins: $package_bins"
             package_bins_type=$(jq -cMr type <<<"$package_bins")
+            echo "bin type: $package_bins_type"
 
             case "$package_bins_type" in
               object)
@@ -238,6 +240,8 @@ let
                 ;;
               *)
                 echo "unknown type for binaries: $package_bins_type"
+                echo "please submit an issue: https://github.com/nmattia/napalm/issues/new"
+                exit 1
                 ;;
             esac
 
@@ -295,6 +299,17 @@ in
         ''
           export HOME=$(mktemp -d)
           ${buildPackage sources.cli {}}/bin/netlify --help
+          touch $out
+        '';
+
+  prettydiff =
+    let
+      sources = import ./nix/sources.nix;
+    in
+      pkgs.runCommand "prettydiff-test" {}
+        ''
+          export HOME=$(mktemp -d)
+          ${buildPackage sources.prettydiff {}}/bin/prettydiff --help
           touch $out
         '';
 
