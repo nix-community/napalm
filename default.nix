@@ -194,7 +194,7 @@ let
             echo "$npmCommands" | \
               while IFS= read -r c
               do
-                echo "Runnig npm command: $c"
+                echo "Running npm command: $c"
                 $c || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
                 echo "Overzealously patching shebangs"
                 if [ -d node_modules ]; then find node_modules -type d -name bin | \
