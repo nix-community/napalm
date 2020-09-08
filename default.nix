@@ -165,9 +165,9 @@ let
           npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
           buildInputs = newBuildInputs;
 
-          configurePhase = "export HOME=$(mktemp -d)";
+          configurePhase = attrs.configurePhase or "export HOME=$(mktemp -d)";
 
-          buildPhase = ''
+          buildPhase = attrs.buildPhase or ''
             runHook preBuild
 
             # TODO: why does the unpacker not set the sourceRoot?
