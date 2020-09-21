@@ -93,14 +93,14 @@ let
   # returns unused ports in a given range
   unusedPort = pkgs.writeScriptBin "unusedPort" ''
     #!${pkgs.stdenv.shell}
-    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.nettools}/bin:${pkgs.gnugrep}/bin"
+    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.lsof}/bin:${pkgs.gnugrep}/bin"
     RANGE_START=''${1:-8000}
     RANGE_END=''${2:-9000}
     N=''${3:-1}
     comm -23 \
        <(seq $RANGE_START $RANGE_END) \
-       <(netstat -aln | grep LISTEN \
-           | sed -n -e 's/.*\.\([[:digit:]]*\) .* /\1/p' \
+       <(lsof -i -P -n \
+           | sed -ne 's/.*:\([[:digit:]]*\) (LISTEN)/\1/p' \
            | sort) \
        | head -n $N
   '';
