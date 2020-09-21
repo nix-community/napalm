@@ -190,16 +190,17 @@ let
             sourceRoot=$PWD
 
             echo "Starting napalm registry"
+            REGISTRY_PORT=$(unusedPort)
 
-            napalm-registry --snapshot ${snapshot} &
+            napalm-registry --port $REGISTRY_PORT --snapshot ${snapshot} &
             napalm_REGISTRY_PID=$!
 
-            while ! nc -z localhost 8081; do
-              echo waiting for registry to be alive on port 8081
+            while ! nc -z localhost $REGISTRY_PORT; do
+              echo waiting for registry to be alive on port $REGISTRY_PORT
               sleep 1
             done
 
-            npm config set registry 'http://localhost:8081'
+            npm config set registry 'http://localhost:$REGISTRY_PORT'
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
