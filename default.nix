@@ -194,6 +194,7 @@ let
 
             napalm-registry --port $REGISTRY_PORT --snapshot ${snapshot} &
             napalm_REGISTRY_PID=$!
+            trap "kill $napalm_REGISTRY_PID" EXIT
 
             while ! nc -z localhost $REGISTRY_PORT; do
               echo waiting for registry to be alive on port $REGISTRY_PORT
@@ -217,9 +218,6 @@ let
                 if [ -d node_modules ]; then find node_modules -type d -name bin | \
                   while read file; do patchShebangs $file; done; fi
               done
-
-            echo "Shutting down napalm registry"
-            kill $napalm_REGISTRY_PID
 
             runHook postBuild
           '';
