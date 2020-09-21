@@ -93,7 +93,7 @@ let
   # returns unused ports in a given range
   unusedPort = pkgs.writeScriptBin "unusedPort" ''
     #!${pkgs.stdenv.shell}
-    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.lsof}/bin:${pkgs.gnugrep}/bin"
+    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.lsof}/bin"
     RANGE_START=''${1:-8000}
     RANGE_END=''${2:-9000}
     N=''${3:-1}
