@@ -201,7 +201,7 @@ let
               sleep 1
             done
 
-            npm config set registry 'http://localhost:$REGISTRY_PORT'
+            npm config set registry "http://localhost:$REGISTRY_PORT"
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
