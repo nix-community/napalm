@@ -90,6 +90,21 @@ let
       else
         builtins.trace "WARN: package.json not found in ${toString root}" {};
 
+  # returns unused ports in a given range
+  unusedPort = pkgs.writeScriptBin "unusedPort" ''
+    #!${pkgs.stdenv.shell}
+    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.nettools}/bin:${pkgs.gnugrep}/bin"
+    RANGE_START=''${1:-8000}
+    RANGE_END=''${2:-9000}
+    N=''${3:-1}
+    comm -23 \
+       <(seq $RANGE_START $RANGE_END) \
+       <(netstat -aln | grep LISTEN \
+           | sed -n -e 's/.*\.\([[:digit:]]*\) .* /\1/p' \
+           | sort) \
+       | head -n $N
+  '';
+
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
   #
@@ -139,6 +154,7 @@ let
           pkgs.jq
           pkgs.netcat-gnu
           pkgs.nodejs
+          unusedPort
         ];
 
         reformatPackageName = pname:
@@ -281,6 +297,7 @@ let
 in
 {
   inherit
+    unusedPort
     buildPackage
     napalm-registry-devshell
     snapshotFromPackageLockJson
