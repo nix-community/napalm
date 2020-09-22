@@ -51,13 +51,19 @@ main = do
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
 
-    let port = case configPort config of
-                 Just p -> p
-                 Nothing -> 8081
-    let baseUrl = configEndpoint config <> ":" <> tshow port
-                        where tshow = T.pack . show
+    let tshow = T.pack . show
+    let mkApplication port = Servant.serve api (server baseUrl config snapshot)
+          where
+            baseUrl = configEndpoint config <> ":" <> tshow port
 
-    Warp.run port (Servant.serve api (server baseUrl config snapshot))
+    (port, app) <- case configPort config of
+      Just port -> do
+        pure (port, Warp.run port (mkApplication port))
+      Nothing -> do
+        (port, socket) <- Warp.openFreePort
+        pure (port, Warp.runSettingsSocket Warp.defaultSettings socket (mkApplication port))
+    T.putStrLn $ "registry is listening on port: " <> tshow port
+    app
 
 parseConfig :: Opts.Parser Config
 parseConfig = Config <$>
