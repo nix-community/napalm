@@ -79,7 +79,6 @@ parseConfig = Config <$>
     ) <*>
     (optional $ Opts.option Opts.auto (
       Opts.long "port" <>
-      -- Opts.value Nothing <>
       Opts.help "The to serve on, also used in the Tarball URL"
     )) <*>
     Opts.strOption (

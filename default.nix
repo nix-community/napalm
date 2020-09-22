@@ -149,9 +149,7 @@ let
           haskellPackages.napalm-registry
           pkgs.fswatch
           pkgs.jq
-          pkgs.netcat-gnu
           pkgs.nodejs
-          pkgs.lsof
           waitForAndGetPort
         ];
 
