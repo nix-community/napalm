@@ -188,7 +188,7 @@ let
             sourceRoot=$PWD
 
             echo "Starting napalm registry"
-            napalm-registry --port 4444 --snapshot ${snapshot} &
+            napalm-registry --snapshot ${snapshot} &
             napalm_REGISTRY_PID=$!
             trap "waitForAndGetPort $napalm_REGISTRY_PID; kill $napalm_REGISTRY_PID" EXIT
             echo "REGISTRY STARTED $napalm_REGISTRY_PID"
