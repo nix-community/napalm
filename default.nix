@@ -91,18 +91,15 @@ let
         builtins.trace "WARN: package.json not found in ${toString root}" {};
 
   # returns unused ports in a given range
-  unusedPort = pkgs.writeScriptBin "unusedPort" ''
+  waitForAndGetPort = pkgs.writeScriptBin "waitForAndGetPort" ''
     #!${pkgs.stdenv.shell}
-    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.lsof}/bin"
-    RANGE_START=''${1:-8000}
-    RANGE_END=''${2:-9000}
-    N=''${3:-1}
-    comm -23 \
-       <(seq $RANGE_START $RANGE_END) \
-       <(lsof -i -P -n \
-           | sed -ne 's/.*:\([[:digit:]]*\) (LISTEN)/\1/p' \
-           | sort) \
-       | head -n $N
+    PATH="$PATH:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.gnugrep}/bin:${pkgs.lsof}/bin"
+    THE_PID=$1
+    while ! lsof -Pani -p $THE_PID | grep LISTEN > /dev/null; do
+      >&2 echo "Process $THE_PID is not listening to any port yet"
+      sleep 1
+    done
+    lsof -Pani -p $THE_PID | sed -ne 's/.*:\([[:digit:]]*\) (LISTEN)/\1/p'
   '';
 
   # Builds an npm package, placing all the executables the 'bin' directory.
@@ -154,7 +151,8 @@ let
           pkgs.jq
           pkgs.netcat-gnu
           pkgs.nodejs
-          unusedPort
+          pkgs.lsof
+          waitForAndGetPort
         ];
 
         reformatPackageName = pname:
@@ -190,18 +188,17 @@ let
             sourceRoot=$PWD
 
             echo "Starting napalm registry"
-            REGISTRY_PORT=$(unusedPort)
-
-            napalm-registry --port $REGISTRY_PORT --snapshot ${snapshot} &
+            napalm-registry --port 4444 --snapshot ${snapshot} &
             napalm_REGISTRY_PID=$!
-            trap "kill $napalm_REGISTRY_PID" EXIT
+            trap "waitForAndGetPort $napalm_REGISTRY_PID; kill $napalm_REGISTRY_PID" EXIT
+            echo "REGISTRY STARTED $napalm_REGISTRY_PID"
 
-            while ! nc -z localhost $REGISTRY_PORT; do
-              echo waiting for registry to be alive on port $REGISTRY_PORT
-              sleep 1
-            done
+            echo "Configure registry for npm"
+            REGISTRY_PORT=$(waitForAndGetPort $napalm_REGISTRY_PID)
+            echo "Listening on $REGISTRY_PORT"
 
             npm config set registry "http://localhost:$REGISTRY_PORT"
+            npm config get registry
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
@@ -296,7 +293,7 @@ let
 in
 {
   inherit
-    unusedPort
+    waitForAndGetPort
     buildPackage
     napalm-registry-devshell
     snapshotFromPackageLockJson
