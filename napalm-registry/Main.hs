@@ -39,7 +39,7 @@ import qualified Servant as Servant
 data Config = Config
   { configVerbose :: Bool
   , configEndpoint :: T.Text
-  , configPort :: Int
+  , configPort :: Maybe Int
   , configSnapshot :: FilePath
   }
 
@@ -50,7 +50,14 @@ main = do
     snapshot <- Aeson.decodeFileStrict (configSnapshot config) >>= \case
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
-    Warp.run (configPort config) (Servant.serve api (server config snapshot))
+
+    let port = case configPort config of
+                 Just p -> p
+                 Nothing -> 8081
+    let baseUrl = configEndpoint config <> ":" <> tshow port
+                        where tshow = T.pack . show
+
+    Warp.run port (Servant.serve api (server baseUrl config snapshot))
 
 parseConfig :: Opts.Parser Config
 parseConfig = Config <$>
@@ -64,11 +71,11 @@ parseConfig = Config <$>
       Opts.value "localhost" <>
       Opts.help "The endpoint of this server, used in the Tarball URL"
     ) <*>
-    Opts.option Opts.auto (
+    (optional $ Opts.option Opts.auto (
       Opts.long "port" <>
-      Opts.value 8081 <>
+      -- Opts.value Nothing <>
       Opts.help "The to serve on, also used in the Tarball URL"
-    ) <*>
+    )) <*>
     Opts.strOption (
       Opts.long "snapshot" <>
       Opts.help (unwords
@@ -85,14 +92,14 @@ parseConfig = Config <$>
 api :: Proxy API
 api = Proxy
 
-server :: Config -> Snapshot -> Servant.Server API
-server config ss =
-  servePackageMetadata config ss :<|>
-  servePackageVersionMetadata config ss :<|>
+server :: T.Text -> Config -> Snapshot -> Servant.Server API
+server baseUrl config ss =
+  servePackageMetadata baseUrl config ss :<|>
+  servePackageVersionMetadata baseUrl config ss :<|>
   serveTarball config ss
 
-servePackageMetadata :: Config -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
-servePackageMetadata config (unSnapshot -> ss) pn = do
+servePackageMetadata :: T.Text -> Config -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
+servePackageMetadata baseUrl config (unSnapshot -> ss) pn = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
     pvs <- maybe
@@ -101,17 +108,18 @@ servePackageMetadata config (unSnapshot -> ss) pn = do
       (HMS.lookup pn ss)
 
     pvs' <- forM (HMS.toList pvs)  $ \(pv, tarPath) ->
-      (pv,) <$> liftIO (mkPackageVersionMetadata config pn pv tarPath)
+      (pv,) <$> liftIO (mkPackageVersionMetadata baseUrl pn pv tarPath)
 
     pure $ mkPackageMetadata pn (HMS.fromList pvs')
 
 servePackageVersionMetadata
-  :: Config
+  :: T.Text
+  -> Config
   -> Snapshot
   -> PackageName
   -> PackageVersion
   -> Servant.Handler PackageVersionMetadata
-servePackageVersionMetadata config ss pn pv = do
+servePackageVersionMetadata baseUrl config ss pn pv = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ T.unwords
         [ "Requesting package version info for"
@@ -123,7 +131,7 @@ servePackageVersionMetadata config ss pn pv = do
       pure
       (getTarPath ss pn pv)
 
-    liftIO $ mkPackageVersionMetadata config pn pv tarPath
+    liftIO $ mkPackageVersionMetadata baseUrl pn pv tarPath
 
 getTarPath :: Snapshot -> PackageName -> PackageVersion -> Maybe FilePath
 getTarPath (unSnapshot -> ss) pn pv = do
@@ -222,17 +230,17 @@ sha1sum fp = hash <$> BS.readFile fp
     hash = T.decodeUtf8 . Base16.encode . SHA1.hash
 
 mkPackageVersionMetadata
-  :: Config
+  :: T.Text
   -> PackageName
   -> PackageVersion
   -> FilePath
   -> IO PackageVersionMetadata
-mkPackageVersionMetadata config pn pv tarPath = do
+mkPackageVersionMetadata baseUrl pn pv tarPath = do
     shasum <- sha1sum tarPath :: IO T.Text
 
     let
       tarName = toTarballName pn pv
-      tarURL = mkTarballURL config pn tarName
+      tarURL = mkTarballURL baseUrl pn tarName
       dist = Aeson.object
         [ "shasum" .= shasum
         , "tarball" .= tarURL
@@ -244,16 +252,14 @@ mkPackageVersionMetadata config pn pv tarPath = do
       Aeson.Object $
       HMS.singleton "dist" dist <> packageJson
 
-mkTarballURL :: Config -> PackageName -> TarballName -> T.Text
+mkTarballURL :: T.Text -> PackageName -> TarballName -> T.Text
 mkTarballURL
-  config
+  baseUrl
   (URI.encodeText . unPackageName -> pn)
   (URI.encodeText . unTarballName -> tarName)
   = "http://" <>
     T.intercalate "/"
-      [ configEndpoint config <> ":" <> tshow (configPort config), pn, "-", tarName ]
-  where
-    tshow = T.pack . show
+      [ baseUrl, pn, "-", tarName ]
 
 readPackageJson :: FilePath -> IO Aeson.Object
 readPackageJson fp = do
