@@ -16,6 +16,7 @@ dependencies:
     - time
     - unordered-containers
     - uri-encode
+    - network
     - warp
     - zlib
 

@@ -167,6 +167,9 @@ let
 
           configurePhase = attrs.configurePhase or "export HOME=$(mktemp -d)";
 
+          nativeBuildInputs = (mkDerivationAttrs.nativeBuildInputs or [])
+                           ++ pkgs.lib.singleton pkgs.ip2unix;
+
           buildPhase = attrs.buildPhase or ''
             runHook preBuild
 
@@ -175,15 +178,16 @@ let
 
             echo "Starting napalm registry"
 
-            napalm-registry --snapshot ${snapshot} &
+            registrySock="$TMPDIR/registry.sock"
+            napalm-registry --path "$registrySock" --snapshot ${snapshot} &
             napalm_REGISTRY_PID=$!
 
-            while ! nc -z localhost 8081; do
-              echo waiting for registry to be alive on port 8081
+            while [ ! -e "$registrySock" ]; do
+              echo waiting for registry socket to be alive in "$registrySock"
               sleep 1
             done
 
-            npm config set registry 'http://localhost:8081'
+            npm config set registry 'http://127.0.0.100'
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
@@ -195,7 +199,8 @@ let
               while IFS= read -r c
               do
                 echo "Running npm command: $c"
-                $c || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
+                ip2unix -r out,addr=127.0.0.100,path="$registrySock" -- $c \
+                  || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
                 echo "Overzealously patching shebangs"
                 if [ -d node_modules ]; then find node_modules -type d -name bin | \
                   while read file; do patchShebangs $file; done; fi

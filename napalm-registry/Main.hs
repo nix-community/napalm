@@ -31,6 +31,7 @@ import qualified Data.HashMap.Strict as HMS
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
+import qualified Network.Socket as Socket
 import qualified Network.URI.Encode as URI
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Servant as Servant
@@ -38,8 +39,8 @@ import qualified Servant as Servant
 -- | See 'parseConfig' for field descriptions
 data Config = Config
   { configVerbose :: Bool
-  , configEndpoint :: T.Text
-  , configPort :: Int
+  , configHost :: T.Text
+  , configSocketPath :: FilePath
   , configSnapshot :: FilePath
   }
 
@@ -50,7 +51,13 @@ main = do
     snapshot <- Aeson.decodeFileStrict (configSnapshot config) >>= \case
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
-    Warp.run (configPort config) (Servant.serve api (server config snapshot))
+
+    socket <- Socket.socket Socket.AF_UNIX Socket.Stream 0
+    Socket.bind socket . Socket.SockAddrUnix $ configSocketPath config
+    Socket.listen socket Socket.maxListenQueue
+
+    Warp.runSettingsSocket Warp.defaultSettings socket $
+      Servant.serve api (server config snapshot)
 
 parseConfig :: Opts.Parser Config
 parseConfig = Config <$>
@@ -61,13 +68,13 @@ parseConfig = Config <$>
     ) <*>
     Opts.strOption (
       Opts.long "endpoint" <>
-      Opts.value "localhost" <>
-      Opts.help "The endpoint of this server, used in the Tarball URL"
+      Opts.value "127.0.0.100" <>
+      Opts.help "The fake endpoint of this server, used in the Tarball URL"
     ) <*>
-    Opts.option Opts.auto (
-      Opts.long "port" <>
-      Opts.value 8081 <>
-      Opts.help "The to serve on, also used in the Tarball URL"
+    Opts.strOption (
+      Opts.long "path" <>
+      Opts.value "registry.sock" <>
+      Opts.help "The Unix socket path to serve on"
     ) <*>
     Opts.strOption (
       Opts.long "snapshot" <>
@@ -251,9 +258,7 @@ mkTarballURL
   (URI.encodeText . unTarballName -> tarName)
   = "http://" <>
     T.intercalate "/"
-      [ configEndpoint config <> ":" <> tshow (configPort config), pn, "-", tarName ]
-  where
-    tshow = T.pack . show
+      [ configHost config, pn, "-", tarName ]
 
 readPackageJson :: FilePath -> IO Aeson.Object
 readPackageJson fp = do
