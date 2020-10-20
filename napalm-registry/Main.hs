@@ -13,6 +13,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Aeson ((.=))
+import Data.Function
 import Data.Hashable (Hashable)
 import Data.List
 import Data.Proxy
@@ -39,18 +40,33 @@ import qualified Servant as Servant
 data Config = Config
   { configVerbose :: Bool
   , configEndpoint :: T.Text
-  , configPort :: Int
+  , configPort :: Port
   , configSnapshot :: FilePath
-  }
+  } deriving Show
+
+data Port = UsePort Int | ReportTo FilePath
+  deriving Show
 
 main :: IO ()
 main = do
     config <- Opts.execParser (Opts.info (parseConfig <**> Opts.helper) Opts.fullDesc)
 
+    putStrLn "Running napalm registry with config:"
+    print config
+
     snapshot <- Aeson.decodeFileStrict (configSnapshot config) >>= \case
       Just snapshot -> pure snapshot
       Nothing -> error $ "Could not parse packages"
-    Warp.run (configPort config) (Servant.serve api (server config snapshot))
+    case configPort config of
+      UsePort p ->
+        Warp.run p (Servant.serve api (server config p snapshot))
+      ReportTo reportTo -> do
+        putStrLn "Asking warp for a free port"
+        (port,sock) <- Warp.openFreePort
+        putStrLn ("Warp picked port " <> show port <> ", reporting to " <> reportTo)
+        writeFile reportTo (show port)
+        let settings = Warp.defaultSettings & Warp.setPort port
+        Warp.runSettingsSocket settings sock (Servant.serve api (server config port snapshot))
 
 parseConfig :: Opts.Parser Config
 parseConfig = Config <$>
@@ -64,11 +80,16 @@ parseConfig = Config <$>
       Opts.value "localhost" <>
       Opts.help "The endpoint of this server, used in the Tarball URL"
     ) <*>
-    Opts.option Opts.auto (
+    (UsePort <$> Opts.option Opts.auto (
       Opts.long "port" <>
       Opts.value 8081 <>
       Opts.help "The to serve on, also used in the Tarball URL"
-    ) <*>
+    ) <|>
+    ReportTo <$> Opts.strOption (
+      Opts.long "report-to" <>
+      Opts.metavar "FILE" <>
+      Opts.help "Use a random port and report to FILE"
+    )) <*>
     Opts.strOption (
       Opts.long "snapshot" <>
       Opts.help (unwords
@@ -85,14 +106,14 @@ parseConfig = Config <$>
 api :: Proxy API
 api = Proxy
 
-server :: Config -> Snapshot -> Servant.Server API
-server config ss =
-  servePackageMetadata config ss :<|>
-  servePackageVersionMetadata config ss :<|>
+server :: Config -> Warp.Port -> Snapshot -> Servant.Server API
+server config port ss =
+  servePackageMetadata config port ss :<|>
+  servePackageVersionMetadata config port ss :<|>
   serveTarball config ss
 
-servePackageMetadata :: Config -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
-servePackageMetadata config (unSnapshot -> ss) pn = do
+servePackageMetadata :: Config -> Warp.Port -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
+servePackageMetadata config port (unSnapshot -> ss) pn = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
     pvs <- maybe
@@ -101,17 +122,18 @@ servePackageMetadata config (unSnapshot -> ss) pn = do
       (HMS.lookup pn ss)
 
     pvs' <- forM (HMS.toList pvs)  $ \(pv, tarPath) ->
-      (pv,) <$> liftIO (mkPackageVersionMetadata config pn pv tarPath)
+      (pv,) <$> liftIO (mkPackageVersionMetadata config port pn pv tarPath)
 
     pure $ mkPackageMetadata pn (HMS.fromList pvs')
 
 servePackageVersionMetadata
   :: Config
+  -> Warp.Port
   -> Snapshot
   -> PackageName
   -> PackageVersion
   -> Servant.Handler PackageVersionMetadata
-servePackageVersionMetadata config ss pn pv = do
+servePackageVersionMetadata config port ss pn pv = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ T.unwords
         [ "Requesting package version info for"
@@ -123,7 +145,7 @@ servePackageVersionMetadata config ss pn pv = do
       pure
       (getTarPath ss pn pv)
 
-    liftIO $ mkPackageVersionMetadata config pn pv tarPath
+    liftIO $ mkPackageVersionMetadata config port pn pv tarPath
 
 getTarPath :: Snapshot -> PackageName -> PackageVersion -> Maybe FilePath
 getTarPath (unSnapshot -> ss) pn pv = do
@@ -223,16 +245,17 @@ sha1sum fp = hash <$> BS.readFile fp
 
 mkPackageVersionMetadata
   :: Config
+  -> Warp.Port
   -> PackageName
   -> PackageVersion
   -> FilePath
   -> IO PackageVersionMetadata
-mkPackageVersionMetadata config pn pv tarPath = do
+mkPackageVersionMetadata config port pn pv tarPath = do
     shasum <- sha1sum tarPath :: IO T.Text
 
     let
       tarName = toTarballName pn pv
-      tarURL = mkTarballURL config pn tarName
+      tarURL = mkTarballURL config port pn tarName
       dist = Aeson.object
         [ "shasum" .= shasum
         , "tarball" .= tarURL
@@ -244,14 +267,15 @@ mkPackageVersionMetadata config pn pv tarPath = do
       Aeson.Object $
       HMS.singleton "dist" dist <> packageJson
 
-mkTarballURL :: Config -> PackageName -> TarballName -> T.Text
+mkTarballURL :: Config -> Warp.Port -> PackageName -> TarballName -> T.Text
 mkTarballURL
   config
+  port
   (URI.encodeText . unPackageName -> pn)
   (URI.encodeText . unTarballName -> tarName)
   = "http://" <>
     T.intercalate "/"
-      [ configEndpoint config <> ":" <> tshow (configPort config), pn, "-", tarName ]
+      [ configEndpoint config <> ":" <> tshow port, pn, "-", tarName ]
   where
     tshow = T.pack . show
 
