@@ -103,7 +103,7 @@ let
       # is not set, it defaults to `src`.
     , root ? src
     , packageLock ? null
-    , npmCommands ? [ "npm install" ]
+    , npmCommands ? [ "npm install --loglevel verbose" ]
     , buildInputs ? []
     , installPhase ? null
     , ...
@@ -175,15 +175,23 @@ let
 
             echo "Starting napalm registry"
 
-            napalm-registry --snapshot ${snapshot} &
+            napalm_REPORT_PORT_TO=$(mktemp -d)/port
+
+            napalm-registry --snapshot ${snapshot} --report-to "$napalm_REPORT_PORT_TO" &
             napalm_REGISTRY_PID=$!
 
-            while ! nc -z localhost 8081; do
-              echo waiting for registry to be alive on port 8081
+            while [ ! -f "$napalm_REPORT_PORT_TO" ]; do
+              echo waiting for registry to report port to "$napalm_REPORT_PORT_TO"
               sleep 1
             done
 
-            npm config set registry 'http://localhost:8081'
+            napalm_PORT="$(cat "$napalm_REPORT_PORT_TO")"
+            rm "$napalm_REPORT_PORT_TO"
+            rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
+
+            echo "Configuring npm to use port $napalm_PORT"
+
+            npm config set registry "http://localhost:$napalm_PORT"
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
