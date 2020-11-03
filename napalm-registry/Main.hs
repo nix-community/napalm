@@ -108,36 +108,65 @@ api = Proxy
 
 server :: Config -> Warp.Port -> Snapshot -> Servant.Server API
 server config port ss =
-  servePackageMetadata config port ss :<|>
-  servePackageVersionMetadata config port ss :<|>
-  serveTarball config ss
+  serveTarballScoped config ss :<|>
+  serveTarballUnscoped config ss :<|> -- this needs to be before servePackageVersionMetadataScoped to avoid conflicts
+  servePackageVersionMetadataScoped config port ss :<|>
+  servePackageVersionMetadataUnscoped config port ss :<|> -- this needs to be before servePackageMetadataScoped to avoid conflicts
+  servePackageMetadataScoped config port ss :<|>
+  servePackageMetadataUnscoped config port ss -- this cannot be matched with current servant
 
-servePackageMetadata :: Config -> Warp.Port -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
+servePackageMetadataScoped :: Config -> Warp.Port -> Snapshot -> ScopeName -> PackageName -> Servant.Handler PackageMetadata
+servePackageMetadataScoped config port ss sn pn = servePackageMetadata config port ss (ScopedPackageName (Just sn) pn)
+
+servePackageMetadataUnscoped :: Config -> Warp.Port -> Snapshot -> PackageName -> Servant.Handler PackageMetadata
+servePackageMetadataUnscoped config port ss pn = servePackageMetadata config port ss (ScopedPackageName Nothing pn)
+
+servePackageMetadata :: Config -> Warp.Port -> Snapshot -> ScopedPackageName -> Servant.Handler PackageMetadata
 servePackageMetadata config port (unSnapshot -> ss) pn = do
+    let flatPn = flattenScopedPackageName pn
     when (configVerbose config) $
-      liftIO $ T.putStrLn $ "Requesting package info for " <> unPackageName pn
+      liftIO $ T.putStrLn $ "Requesting package info for " <> unScopedPackageNameFlat flatPn
     pvs <- maybe
-      (error $ "No such package: " <> T.unpack (unPackageName pn))
+      (error $ "No such package: " <> T.unpack (unScopedPackageNameFlat flatPn))
       pure
-      (HMS.lookup pn ss)
+      (HMS.lookup flatPn ss)
 
     pvs' <- forM (HMS.toList pvs)  $ \(pv, tarPath) ->
       (pv,) <$> liftIO (mkPackageVersionMetadata config port pn pv tarPath)
 
     pure $ mkPackageMetadata pn (HMS.fromList pvs')
 
-servePackageVersionMetadata
+servePackageVersionMetadataScoped
+  :: Config
+  -> Warp.Port
+  -> Snapshot
+  -> ScopeName
+  -> PackageName
+  -> PackageVersion
+  -> Servant.Handler PackageVersionMetadata
+servePackageVersionMetadataScoped config port ss sn pn = servePackageVersionMetadata config port ss (ScopedPackageName (Just sn) pn)
+
+servePackageVersionMetadataUnscoped
   :: Config
   -> Warp.Port
   -> Snapshot
   -> PackageName
   -> PackageVersion
   -> Servant.Handler PackageVersionMetadata
+servePackageVersionMetadataUnscoped config port ss pn = servePackageVersionMetadata config port ss (ScopedPackageName Nothing pn)
+
+servePackageVersionMetadata
+  :: Config
+  -> Warp.Port
+  -> Snapshot
+  -> ScopedPackageName
+  -> PackageVersion
+  -> Servant.Handler PackageVersionMetadata
 servePackageVersionMetadata config port ss pn pv = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ T.unwords
         [ "Requesting package version info for"
-        , unPackageName pn <> "@" <> unPackageVersion pv
+        , unScopedPackageNameFlat (flattenScopedPackageName pn) <> "#" <> unPackageVersion pv
         ]
 
     tarPath <- maybe
@@ -147,25 +176,31 @@ servePackageVersionMetadata config port ss pn pv = do
 
     liftIO $ mkPackageVersionMetadata config port pn pv tarPath
 
-getTarPath :: Snapshot -> PackageName -> PackageVersion -> Maybe FilePath
+getTarPath :: Snapshot -> ScopedPackageName -> PackageVersion -> Maybe FilePath
 getTarPath (unSnapshot -> ss) pn pv = do
-    pvs <- HMS.lookup pn ss
+    pvs <- HMS.lookup (flattenScopedPackageName pn) ss
     tarPath <- HMS.lookup pv pvs
     pure $ tarPath
 
-serveTarball :: Config -> Snapshot -> PackageName -> TarballName -> Servant.Handler Tarball
+serveTarballScoped :: Config -> Snapshot -> ScopeName -> PackageName -> TarballName -> Servant.Handler Tarball
+serveTarballScoped config ss sn pn = serveTarball config ss (ScopedPackageName (Just sn) pn)
+
+serveTarballUnscoped :: Config -> Snapshot -> PackageName -> TarballName -> Servant.Handler Tarball
+serveTarballUnscoped config ss pn = serveTarball config ss (ScopedPackageName Nothing pn)
+
+serveTarball :: Config -> Snapshot -> ScopedPackageName -> TarballName -> Servant.Handler Tarball
 serveTarball config ss pn tarName = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ T.unwords
         [ "Requesting tarball for"
-        , unPackageName pn <> ":"
+        , unScopedPackageNameFlat (flattenScopedPackageName pn) <> ":"
         , unTarballName tarName
         ]
 
     pv <- maybe (error "Could not parse version") pure $ do
-      let pn' = unPackageName pn
+      let pn' = spnName pn -- the tarball filename does not contain scope
       let tn' = unTarballName tarName
-      a <- T.stripPrefix (pn' <> "-") tn'
+      a <- T.stripPrefix (unPackageName pn' <> "-") tn'
       b <- T.stripSuffix ".tgz" a
       pure $ PackageVersion b
 
@@ -175,26 +210,46 @@ serveTarball config ss pn tarName = do
       (getTarPath ss pn pv)
     liftIO $ Tarball <$> BS.readFile tarPath
 
-toTarballName :: PackageName -> PackageVersion -> TarballName
-toTarballName (PackageName pn) (PackageVersion pv) =
-    TarballName (pn <> "-" <> pv <> ".tgz")
+toTarballName :: ScopedPackageName -> PackageVersion -> TarballName
+toTarballName pn (PackageVersion pv) =
+    TarballName (unScopedPackageNameFlat (flattenScopedPackageName pn) <> "-" <> pv <> ".tgz")
+
+flattenScopedPackageName :: ScopedPackageName -> ScopedPackageNameFlat
+flattenScopedPackageName (ScopedPackageName Nothing (PackageName pn)) = ScopedPackageNameFlat pn
+flattenScopedPackageName (ScopedPackageName (Just (ScopeName sn)) (PackageName pn)) = ScopedPackageNameFlat (sn <> "/" <> pn)
 
 type API =
-  Capture "package_name" PackageName :> Get '[JSON] PackageMetadata :<|>
-  Capture "package_name" PackageName :>
-    Capture "package_version" PackageVersion :>
-    Get '[JSON] PackageVersionMetadata :<|>
+  Capture "scope_name" ScopeName :>
+    Capture "package_name" PackageName :>
+    "-" :>
+    Capture "tarbal_name" TarballName :>
+    Get '[OctetStream] Tarball :<|>
   Capture "package_name" PackageName :>
     "-" :>
     Capture "tarbal_name" TarballName :>
-    Get '[OctetStream] Tarball
+    Get '[OctetStream] Tarball :<|>
+  Capture "scope_name" ScopeName :>
+    Capture "package_name" PackageName :>
+    Capture "package_version" PackageVersion :>
+    Get '[JSON] PackageVersionMetadata :<|>
+  Capture "package_name" PackageName :>
+    Capture "package_version" PackageVersion :>
+    Get '[JSON] PackageVersionMetadata :<|>
+  Capture "scope_name" ScopeName :> Capture "package_name" PackageName :> Get '[JSON] PackageMetadata :<|>
+  Capture "package_name" PackageName :> Get '[JSON] PackageMetadata
 
 newtype PackageTag = PackageTag { _unPackageTag :: T.Text }
   deriving newtype ( Aeson.ToJSONKey, IsString, Hashable )
 newtype PackageVersion = PackageVersion { unPackageVersion :: T.Text }
   deriving newtype ( Eq, Ord, Hashable, FromHttpApiData, Aeson.ToJSONKey, Aeson.FromJSONKey, Aeson.ToJSON )
+data ScopedPackageName = ScopedPackageName { _spnScope :: Maybe ScopeName, spnName :: PackageName }
+  deriving ( Eq )
+newtype ScopedPackageNameFlat = ScopedPackageNameFlat { unScopedPackageNameFlat :: T.Text }
+  deriving newtype ( Eq, Show, Hashable, Aeson.FromJSONKey, Aeson.ToJSON )
 newtype PackageName = PackageName { unPackageName :: T.Text }
-  deriving newtype ( Eq, Hashable, FromHttpApiData, Aeson.FromJSONKey, Aeson.ToJSON )
+  deriving newtype ( Eq, Show, Hashable, FromHttpApiData, Aeson.FromJSONKey, Aeson.ToJSON )
+newtype ScopeName = ScopeName { _unScopeName :: T.Text }
+  deriving newtype ( Eq, Show, Hashable, FromHttpApiData, Aeson.FromJSONKey, Aeson.ToJSON )
 
 -- | With .tgz extension
 newtype TarballName = TarballName { unTarballName :: T.Text }
@@ -206,19 +261,19 @@ newtype Tarball = Tarball { _unTarball :: BS.ByteString }
 data PackageMetadata = PackageMetadata
   { packageDistTags :: HMS.HashMap PackageTag PackageVersion
   , packageModified :: UTCTime
-  , packageName :: PackageName
+  , packageName :: ScopedPackageNameFlat
   , packageVersions :: HMS.HashMap PackageVersion PackageVersionMetadata
   }
 
 mkPackageMetadata
-  :: PackageName
+  :: ScopedPackageName
   -> HMS.HashMap PackageVersion PackageVersionMetadata
   -> PackageMetadata
 mkPackageMetadata pn pvs = PackageMetadata
     { packageDistTags = HMS.singleton "latest" latestVersion
     -- This is a dummy date
     , packageModified = UTCTime (ModifiedJulianDay 0) 0
-    , packageName = pn
+    , packageName = flattenScopedPackageName pn
     , packageVersions = pvs
     }
   where
@@ -246,7 +301,7 @@ sha1sum fp = hash <$> BS.readFile fp
 mkPackageVersionMetadata
   :: Config
   -> Warp.Port
-  -> PackageName
+  -> ScopedPackageName
   -> PackageVersion
   -> FilePath
   -> IO PackageVersionMetadata
@@ -267,11 +322,11 @@ mkPackageVersionMetadata config port pn pv tarPath = do
       Aeson.Object $
       HMS.singleton "dist" dist <> packageJson
 
-mkTarballURL :: Config -> Warp.Port -> PackageName -> TarballName -> T.Text
+mkTarballURL :: Config -> Warp.Port -> ScopedPackageName -> TarballName -> T.Text
 mkTarballURL
   config
   port
-  (URI.encodeText . unPackageName -> pn)
+  (URI.encodeText . unScopedPackageNameFlat . flattenScopedPackageName -> pn)
   (URI.encodeText . unTarballName -> tarName)
   = "http://" <>
     T.intercalate "/"
@@ -303,6 +358,6 @@ readPackageJson fp = do
     pure $ packageJson
 
 newtype Snapshot = Snapshot
-  { unSnapshot :: HMS.HashMap PackageName (HMS.HashMap PackageVersion FilePath)
+  { unSnapshot :: HMS.HashMap ScopedPackageNameFlat (HMS.HashMap PackageVersion FilePath)
   }
   deriving newtype ( Aeson.FromJSON )
