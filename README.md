@@ -29,8 +29,8 @@ Alternatively provide the path to the package-lock file:
 
 ``` nix
 let
-    napalm = pkgs.callPackage <napalm> { packageLock = <path/to/package-lock>; };
-in napalm.buildPackage ./. {}
+    napalm = pkgs.callPackage <napalm> {};
+in napalm.buildPackage ./. { packageLock = <path/to/package-lock>; }
 ```
 
 ## Napalm - a lightweight npm registry
