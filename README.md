@@ -1,5 +1,7 @@
 # Napalm
 
+**This project is looking for a new maintainer, [see](https://github.com/nix-community/napalm/issues/34)**
+
 > When faced with a JavaScript codebase, napalm is just what you need.
 >
 > -- anonymous
@@ -54,3 +56,8 @@ Available options:
 ```
 
 [niv]: https://github.com/nmattia/niv
+
+
+## Similar projects
+
+- [npmlock2nix](https://github.com/tweag/npmlock2nix)
