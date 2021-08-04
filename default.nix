@@ -6,6 +6,9 @@
 
 { pkgs ? import ./nix {} }:
 let
+  fallbackPackageName = "build-npm-package";
+  fallbackPackageVersion = "0.0.0";
+
   hasFile = dir: filename:
      if pkgs.lib.versionAtLeast builtins.nixVersion "2.3"
      then builtins.pathExists (dir + "/${filename}")
@@ -20,9 +23,20 @@ let
   #       };
   #     "other-package": { ... };
   #   }
-  snapshotFromPackageLockJson = packageLockJson:
+  snapshotFromPackageLockJson = packageLockJson: pname: version:
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
+
+      # Helper function
+      ifNotNull = a: b: if ! isNull a then a else b;
+
+      # Load custom name and version of the program in case it was specified and
+      # not specified by the package-lock.json
+      topPackageName = packageLock.name or (ifNotNull pname fallbackPackageName);
+
+      updateTopPackageVersion = obj: {
+          version = ifNotNull version fallbackPackageVersion;
+        } // obj;
 
       # XXX: Creates a "node" for genericClosure. We include whether or not
       # the packages contains an integrity, and if so the integriy as well,
@@ -44,7 +58,7 @@ let
       # The list of all packages discovered in the package-lock, excluding
       # the top-level package.
       flattened = builtins.genericClosure {
-        startSet = [ (mkNode packageLock.name packageLock) ];
+        startSet = [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
         operator = x: x.next;
       };
 
@@ -98,6 +112,7 @@ let
     src:
     attrs@
     { name ? null
+    , version ? null
       # Used by `napalm` to read the `package-lock.json`, `npm-shrinkwrap.json`
       # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
       # is not set, it defaults to `src`.
@@ -131,7 +146,7 @@ let
         discoveredPackageLock = findPackageLock root;
 
         snapshot = pkgs.writeText "npm-snapshot"
-          (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock));
+          (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock attrs.name attrs.version));
 
         newBuildInputs = buildInputs ++ [
           haskellPackages.napalm-registry
@@ -153,8 +168,8 @@ let
           in builtins.concatStringsSep "-" non-null;
 
         packageJSON = readPackageJSON root;
-        pname = packageJSON.name or "build-npm-package";
-        version = packageJSON.version or "0.0.0";
+        pname = packageJSON.name or fallbackPackageName;
+        version = packageJSON.version or fallbackPackageVersion;
 
         # If name is not specified, read the package.json to load the
         # package name and version from the source package.json
