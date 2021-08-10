@@ -30,6 +30,9 @@
       devShell = forAllSystems
         (system: nixpkgsFor.${system}.napalm.napalm-registry-devshell);
 
-      
+      defaultTemplate = {
+        path = ./template;
+        description = "Template for using Napalm with flakes";
+      };
     };
 }

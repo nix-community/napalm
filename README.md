@@ -35,6 +35,10 @@ let
 in napalm.buildPackage ./. { packageLock = <path/to/package-lock>; }
 ```
 
+### Napalm with Nix flakes
+
+If you want to use Napalm in your flake project, you can do that by adding it to your overlay. There is also a template, that can help you use napalm in your project. You can use it by running `nix flake init -t "github:nix-community/napalm"`.
+
 ## Napalm - a lightweight npm registry
 
 Under the hood napalm uses its own package regitry. The registry is available
