@@ -118,7 +118,9 @@ let
       # is not set, it defaults to `src`.
     , root ? src
     , packageLock ? null
-    , npmCommands ? [ "npm install --loglevel verbose" ]
+      # Propagate --nodedir argument into npm install, as it fixes issue with
+      # compiling with node-gyp package
+    , npmCommands ? [ "npm install --loglevel verbose --nodedir=${pkgs.nodejs}/include/node" ]
     , buildInputs ? []
     , installPhase ? null
     , ...
