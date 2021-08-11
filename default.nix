@@ -212,12 +212,39 @@ let
             rm "$napalm_REPORT_PORT_TO"
             rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
 
+           
             echo "Configuring npm to use port $napalm_PORT"
 
             npm config set registry "http://localhost:$napalm_PORT"
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
+            echo "Overriding npm command"
+
+            mkdir npm-override-dir
+            cat > npm-override-dir/npm << EOF
+            #!${pkgs.bash}/bin/bash
+
+            # It is important to escape all $ as otherwise it bash
+            # that is creating this file substitutes it
+
+            echo "[Override] Npm overrided sucesfully: \$@"
+
+            echo "[Override] Overzealously patching shebangs"
+
+            # TODO: Use the fact that npm can be overrided
+            if [ -d node_modules ]; then find node_modules -type d -name bin | \
+                  while read file; do patchShebangs $file; done; fi
+
+            echo "[Override] Running npm \$@"
+
+            PATH=\$PATH_NO_OVERRIDE npm \$@
+            EOF
+            chmod +x npm-override-dir/npm
+
+            export PATH_NO_OVERRIDE=$PATH
+            export PATH=$(pwd)/npm-override-dir:$PATH
+ 
             echo "Installing npm package"
 
             echo "$npmCommands"
