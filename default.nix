@@ -14,6 +14,15 @@ let
      then builtins.pathExists (dir + "/${filename}")
      else builtins.hasAttr filename (builtins.readDir dir);
 
+  # Helper functions
+  # Returns a if a is not null, otherwise returns b
+  ifNotNull = a: b: if ! isNull a then a else b;
+  # Returns a if a is not empty, otherwise returns b
+  ifNotEmpty = a: b: if a != [] then a else b;
+
+  concatSnapshots = snapshots:
+    pkgs.lib.foldl (s1: s2: s1 // s2) {} snapshots;
+
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
   # following:
@@ -26,9 +35,6 @@ let
   snapshotFromPackageLockJson = packageLockJson: pname: version:
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
-
-      # Helper function
-      ifNotNull = a: b: if ! isNull a then a else b;
 
       # Load custom name and version of the program in case it was specified and
       # not specified by the package-lock.json
@@ -118,13 +124,18 @@ let
       # is not set, it defaults to `src`.
     , root ? src
     , packageLock ? null
+    , additionalPackageLocks ? [] # Sometimes node.js may have multiple package locks, discoveredpackagelock will be used even if this array is specified
       # Propagate --nodedir argument into npm install, as it fixes issue with
       # compiling with node-gyp package
     , npmCommands ? [ "npm install --loglevel verbose --nodedir=${pkgs.nodejs}/include/node" ]
     , buildInputs ? []
     , installPhase ? null
+      # Npm override allows to call bash script before and after every
+      # npm call:
     , npmOverride ? (preNpmHook != "" || postNpmHook != "")
+      # Bash script to be called before npm call:
     , preNpmHook ? ""
+      # Bash script to be called after npm call:
     , postNpmHook ? ""
     , ...
     }:
@@ -136,22 +147,23 @@ let
           "npmCommands"
         ];
 
-        actualPackageLock =
-          if ! isNull packageLock then packageLock
-          else if ! isNull discoveredPackageLock then discoveredPackageLock
-          else abort ''
+        actualPackageLocks = let
+          actualPackageLocks' = additionalPackageLocks ++
+                                ifNotNull [(ifNotNull packageLock discoveredPackageLock)] [];
+        in ifNotEmpty actualPackageLocks' (abort ''
             Could not find a suitable package-lock in ${src}.
-
-            If you specify a 'packageLock' to 'buildPackage', I will use that.
+            If you specify a 'packageLock' or 'packageLocks' to 'buildPackage', I will use that.
             Otherwise, if there is a file 'package-lock.json' in ${src}, I will use that.
             Otherwise, if there is a file 'npm-shrinkwrap.json' in ${src}, I will use that.
             Otherwise, you will see this error message.
-          '';
+        '');
 
         discoveredPackageLock = findPackageLock root;
 
         snapshot = pkgs.writeText "npm-snapshot"
-          (builtins.toJSON (snapshotFromPackageLockJson actualPackageLock attrs.name attrs.version));
+          (builtins.toJSON
+            (concatSnapshots
+              (builtins.map (lock: snapshotFromPackageLockJson lock attrs.name attrs.version) actualPackageLocks)));
 
         newBuildInputs = buildInputs ++ [
           haskellPackages.napalm-registry
