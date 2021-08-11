@@ -123,6 +123,9 @@ let
     , npmCommands ? [ "npm install --loglevel verbose --nodedir=${pkgs.nodejs}/include/node" ]
     , buildInputs ? []
     , installPhase ? null
+    , npmOverride ? (preNpmHook != "" || postNpmHook != "")
+    , preNpmHook ? ""
+    , postNpmHook ? ""
     , ...
     }:
       let
@@ -176,6 +179,35 @@ let
         # If name is not specified, read the package.json to load the
         # package name and version from the source package.json
         name = attrs.name or "${reformatPackageName pname}-${version}";
+
+        npmOverrideScript = ''
+            echo "Overriding npm"
+
+            mkdir npm-override-dir
+            cat > npm-override-dir/npm << EOF
+            #!${pkgs.bash}/bin/bash
+
+            # It is important to escape all $ as otherwise it bash
+            # that is creating this file substitutes it
+
+            echo "Npm overrided sucesfully"
+
+            echo "Running preNpmHook"
+            ${preNpmHook}
+
+            echo "[Override] Running npm \$@"
+
+            ${pkgs.nodejs}/bin/npm \$@ || exit -1
+
+            echo "Runing posNpmHook"
+
+            ${postNpmHook}
+            EOF
+            chmod +x npm-override-dir/npm
+
+            export PATH_NO_OVERRIDE=$PATH
+            export PATH=$(pwd)/npm-override-dir:$PATH
+        '';
       in
         pkgs.stdenv.mkDerivation (mkDerivationAttrs // {
           inherit name src;
@@ -212,39 +244,14 @@ let
             rm "$napalm_REPORT_PORT_TO"
             rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
 
-           
             echo "Configuring npm to use port $napalm_PORT"
 
-            npm config set registry "http://localhost:$napalm_PORT"
+            ${pkgs.nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
 
             export CPATH="${pkgs.nodejs}/include/node:$CPATH"
 
-            echo "Overriding npm command"
+            ${if npmOverride then npmOverrideScript else ""}
 
-            mkdir npm-override-dir
-            cat > npm-override-dir/npm << EOF
-            #!${pkgs.bash}/bin/bash
-
-            # It is important to escape all $ as otherwise it bash
-            # that is creating this file substitutes it
-
-            echo "[Override] Npm overrided sucesfully: \$@"
-
-            echo "[Override] Overzealously patching shebangs"
-
-            # TODO: Use the fact that npm can be overrided
-            if [ -d node_modules ]; then find node_modules -type d -name bin | \
-                  while read file; do patchShebangs $file; done; fi
-
-            echo "[Override] Running npm \$@"
-
-            PATH=\$PATH_NO_OVERRIDE npm \$@
-            EOF
-            chmod +x npm-override-dir/npm
-
-            export PATH_NO_OVERRIDE=$PATH
-            export PATH=$(pwd)/npm-override-dir:$PATH
- 
             echo "Installing npm package"
 
             echo "$npmCommands"
