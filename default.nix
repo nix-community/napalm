@@ -195,7 +195,9 @@ let
         npmOverrideScript = ''
             echo "Overriding npm"
 
-            mkdir npm-override-dir
+            # Create folder if it does not exists
+            mkdir -p npm-override-dir
+
             cat > npm-override-dir/npm << EOF
             #!${pkgs.bash}/bin/bash
 
