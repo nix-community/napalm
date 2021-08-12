@@ -20,8 +20,17 @@ let
   # Returns a if a is not empty, otherwise returns b
   ifNotEmpty = a: b: if a != [] then a else b;
 
-  concatSnapshots = snapshots:
-    pkgs.lib.foldl (s1: s2: s1 // s2) {} snapshots;
+  concatSnapshots = snapshots: let
+    allPkgsNames =
+      pkgs.lib.foldl (acc: set: acc ++ (builtins.attrNames set)) [] snapshots;
+    loadPkgVersions = name: let
+      allVersions = pkgs.lib.foldl (acc: set: acc // set.${name} or {}) {} snapshots;
+    in {
+      inherit name;
+      value = allVersions;
+    };
+    in
+      builtins.listToAttrs (builtins.map loadPkgVersions allPkgsNames);
 
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
