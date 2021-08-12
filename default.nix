@@ -142,6 +142,15 @@ let
       # Npm override allows to call bash script before and after every
       # npm call:
     , npmOverride ? (preNpmHook != "" || postNpmHook != "")
+      # Warning:
+      # If you want to use local vairables in bash scripts
+      # written in preNpmHook or posNpmHook it is required
+      # to escape $ symbols with \$. Otherwise bash will used
+      # external variables, this way you can run for example:
+      # ```
+      # source $stdenv/setup
+      # ```
+
       # Bash script to be called before npm call:
     , preNpmHook ? ""
       # Bash script to be called after npm call:
@@ -218,7 +227,7 @@ let
             echo "Running preNpmHook"
             ${preNpmHook}
 
-            echo "[Override] Running npm \$@"
+            echo "Running npm \$@"
 
             ${pkgs.nodejs}/bin/npm \$@ || exit -1
 
@@ -228,7 +237,6 @@ let
             EOF
             chmod +x npm-override-dir/npm
 
-            export PATH_NO_OVERRIDE=$PATH
             export PATH=$(pwd)/npm-override-dir:$PATH
         '';
       in
