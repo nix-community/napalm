@@ -31,7 +31,45 @@ let
     };
     in
       builtins.listToAttrs (builtins.map loadPkgVersions allPkgsNames);
+   
+  mkNpmTar = { pname, version, src, buildInputs }: pkgs.stdenv.mkDerivation {
+      pname = "${pname}-patched";
+      inherit version src buildInputs;
 
+      dontPatch = true;
+      dontBuild = true;
+      dontConfigure = true;
+
+      installPhase = ''
+      mkdir -p $out/package
+      cp -rf ./* $out/package
+      '';
+
+      postFixup = ''
+      echo Ensuring that shebangs are patched !
+
+      # Sometimes js files have #!/usr/bin/env node
+      for file in $(find $out -type f -name "*.js"); do
+          patchShebangs $file;
+      done
+
+      # Patch all shell files
+      for file in $(find $out -type f -name "*.sh"); do
+          patchShebangs $file;
+      done
+
+      cd $out
+
+      # Package everything up
+      echo Packaging ${pname} ...
+      tar -czf package.tgz package
+
+      # Remove untared package
+      echo Cleanup of ${pname}
+      rm -rf ./package
+      '';
+    };
+  
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
   # following:
@@ -41,7 +79,7 @@ let
   #       };
   #     "other-package": { ... };
   #   }
-  snapshotFromPackageLockJson = packageLockJson: pname: version:
+  snapshotFromPackageLockJson = packageLockJson: pname: version: buildInputs:
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
@@ -92,7 +130,14 @@ let
           then
             {
               "${x.name}" = {
-                "${x.version}" = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
+                "${x.version}" = let
+                  out = mkNpmTar {
+                    src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
+                    pname = pkgs.lib.strings.sanitizeDerivationName x.name;
+                    version = x.version;
+                    inherit buildInputs;
+                  };
+                in "${out}/package.tgz";
               };
             }
           else {};
@@ -181,7 +226,7 @@ let
         snapshot = pkgs.writeText "npm-snapshot"
           (builtins.toJSON
             (concatSnapshots
-              (builtins.map (lock: snapshotFromPackageLockJson lock attrs.name attrs.version) actualPackageLocks)));
+              (builtins.map (lock: snapshotFromPackageLockJson lock attrs.name attrs.version newBuildInputs) actualPackageLocks)));
 
         newBuildInputs = buildInputs ++ [
           haskellPackages.napalm-registry
@@ -189,7 +234,7 @@ let
           pkgs.jq
           pkgs.netcat-gnu
           pkgs.nodejs
-        ];
+          ];
 
         reformatPackageName = pname:
           let
@@ -258,6 +303,8 @@ let
 
             # TODO: why does the unpacker not set the sourceRoot?
             sourceRoot=$PWD
+          
+            node ${./lock-patcher/index.js} ${snapshot}
 
             echo "Starting napalm registry"
 
