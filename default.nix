@@ -38,26 +38,45 @@ let
 
       dontPatch = true;
       dontBuild = true;
-      dontConfigure = true;
+
+      configurePhase = ''
+      # Ensures that fixup phase will use these in the path
+      export PATH=${pkgs.lib.foldl (acc: v: "${acc}${v}/bin:") "" buildInputs}$PATH
+      '';
 
       installPhase = ''
       mkdir -p $out/package
       cp -rf ./* $out/package
       '';
 
+      preFixup = ''
+      echo Ensuring that proper files are executable ...
+
+      # Split by newline instead of spaces in case 
+      # some filename contains space
+      OLD_IFS=$IFS
+      IFS=$'\n'
+
+
+      # This loop looks for files which may contain shebang
+      # and makes them executable if it is the case.
+      # This is useful, because patchShbang function patches 
+      # only files that are executable.
+      # 
+      # See: https://github.com/NixOS/nixpkgs/blob/ba3768aec02b16561ceca1caebdbeb91ae16963d/pkgs/build-support/setup-hooks/patch-shebangs.sh
+
+      for file in $(find $out -type f \( -name "*.js" -or -name "*.sh" \)); do
+        grep -i '^#! */' "$file" && \
+            sed -i 's|^#! */|#!/|' "$file" && \
+            chmod +0100 "$file" || \
+            echo "$file should not be executable"
+      done
+
+      IFS=$OLD_IFS
+      '';
+
+
       postFixup = ''
-      echo Ensuring that shebangs are patched !
-
-      # Sometimes js files have #!/usr/bin/env node
-      for file in $(find $out -type f -name "*.js"); do
-          patchShebangs $file;
-      done
-
-      # Patch all shell files
-      for file in $(find $out -type f -name "*.sh"); do
-          patchShebangs $file;
-      done
-
       cd $out
 
       # Package everything up
@@ -79,7 +98,8 @@ let
   #       };
   #     "other-package": { ... };
   #   }
-  snapshotFromPackageLockJson = packageLockJson: pname: version: buildInputs:
+  snapshotFromPackageLockJson =
+    { packageLockJson, pname, version, buildInputs, patchPackages }:
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
@@ -131,13 +151,14 @@ let
             {
               "${x.name}" = {
                 "${x.version}" = let
+                  src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
                   out = mkNpmTar {
-                    src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
+                    inherit src;
                     pname = pkgs.lib.strings.sanitizeDerivationName x.name;
                     version = x.version;
                     inherit buildInputs;
                   };
-                in "${out}/package.tgz";
+                in if patchPackages then "${out}/package.tgz" else src;
               };
             }
           else {};
@@ -177,13 +198,18 @@ let
       # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
       # is not set, it defaults to `src`.
     , root ? src
+    , nodejs ? pkgs.nodejs # Node js and npm version to be used, like pkgs.nodejs-16_x
     , packageLock ? null
     , additionalPackageLocks ? [] # Sometimes node.js may have multiple package locks, discoveredpackagelock will be used even if this array is specified
+
       # Propagate --nodedir argument into npm install, as it fixes issue with
       # compiling with node-gyp package
-    , npmCommands ? [ "npm install --loglevel verbose --nodedir=${pkgs.nodejs}/include/node" ]
+    , npmCommands ? [ "npm install --loglevel verbose --nodedir=${nodejs}/include/node" ]
     , buildInputs ? []
     , installPhase ? null
+    , patchPackages ? false # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
+      # if you are having `missing interpreter: /usr/bin/env` you should enable this option
+
       # Npm override allows to call bash script before and after every
       # npm call:
     , npmOverride ? (preNpmHook != "" || postNpmHook != "")
@@ -226,14 +252,22 @@ let
         snapshot = pkgs.writeText "npm-snapshot"
           (builtins.toJSON
             (concatSnapshots
-              (builtins.map (lock: snapshotFromPackageLockJson lock attrs.name attrs.version newBuildInputs) actualPackageLocks)));
+              (builtins.map
+                (lock: snapshotFromPackageLockJson {
+                  inherit patchPackages;
+                  packageLockJson = lock;
+                  pname = attrs.name;
+                  version = attrs.version;
+                  buildInputs = newBuildInputs;
+                })
+                actualPackageLocks)));
 
         newBuildInputs = buildInputs ++ [
           haskellPackages.napalm-registry
           pkgs.fswatch
           pkgs.jq
           pkgs.netcat-gnu
-          pkgs.nodejs
+          nodejs
           ];
 
         reformatPackageName = pname:
@@ -274,9 +308,9 @@ let
 
             echo "Running npm \$@"
 
-            ${pkgs.nodejs}/bin/npm \$@ || exit -1
+            ${nodejs}/bin/npm \$@ || exit -1
 
-            echo "Runing posNpmHook"
+            echo "Runing postNpmHook"
 
             ${postNpmHook}
             EOF
@@ -303,8 +337,11 @@ let
 
             # TODO: why does the unpacker not set the sourceRoot?
             sourceRoot=$PWD
-          
-            node ${./lock-patcher/index.js} ${snapshot}
+         
+            ${if patchPackages then ''
+            echo "Patching npm packages integrity" 
+            node ${./scripts}/lock-patcher.mjs ${snapshot}
+            '' else ""}
 
             echo "Starting napalm registry"
 
@@ -324,9 +361,9 @@ let
 
             echo "Configuring npm to use port $napalm_PORT"
 
-            ${pkgs.nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
+            ${nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
 
-            export CPATH="${pkgs.nodejs}/include/node:$CPATH"
+            export CPATH="${nodejs}/include/node:$CPATH"
 
             ${if npmOverride then npmOverrideScript else ""}
 

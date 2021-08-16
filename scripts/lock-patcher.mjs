@@ -6,56 +6,9 @@
   This script should not have any external npm dependencies
 */
 
-const fs = require("fs");
-const crypto = require("crypto");
+import fs from "fs"
 
-const loadAllPackageLocks = async (root) => {
-	const files = fs.readdirSync(root, { withFileTypes: true });
-	let locks = [];
-
-	for (const file of files) {
-		const fileName = `${root}/${file.name}`;
-
-		if (file.isDirectory()) {
-			const additionalLocks = await loadAllPackageLocks(fileName);
-			locks = locks.concat(additionalLocks);
-		}
-
-		if (file.name === "package-lock.json")
-			locks.push(fileName);
-	}
-	return locks;
-};
-
-const loadJSONFile = (file) => {
-	return new Promise((resolve, reject) => {
-		fs.readFile(file, 'utf8', (err, data) => {
-			if (err) reject(err);
-
-			const parsed = JSON.parse(data);
-
-			resolve(parsed);
-		});
-	});
-};
-
-const getHashOf = (type, file) => {
-	return new Promise((resolve, reject) => {
-		const fd = fs.createReadStream(file);
-		const hash = crypto.createHash(type);
-
-		hash.setEncoding("hex");
-
-		fd.on("end", () => {
-			hash.end();
-			resolve(`${type}-${hash.digest('base64')}`);
-		});
-
-		fd.on("error", reject);
-
-		fd.pipe(hash);
-	});
-};
+import { loadJSONFile, loadAllPackageLocks, getHashOf } from "./lib.mjs"
 
 const updateDependencies = async (snapshot, dependencies) => {
 	let result = {};
@@ -68,10 +21,10 @@ const updateDependencies = async (snapshot, dependencies) => {
 			result[packageName].integrity = await getHashOf(hashType, snapshot[packageName][version]);
 
 			if (result[packageName].integrity !== dependencies[packageName].integrity)
-				console.log(`${packageName}-${version}: ${dependencies[packageName].integrity} -> ${result[packageName].integrity}`);
+				console.log(`[lock-patcher] ${packageName}-${version}: ${dependencies[packageName].integrity} -> ${result[packageName].integrity}`);
 		}
 		 catch (err) {
-			console.error(`At: ${packageName}-${version} (${JSON.stringify(snapshot[packageName])})`);
+			console.error(`[lock-patcher] At: ${packageName}-${version} (${JSON.stringify(snapshot[packageName])})`);
 			console.error(err);
 		}
 
@@ -83,24 +36,23 @@ const updateDependencies = async (snapshot, dependencies) => {
 	return result;
 };
 
-
 (async () => {
-	if (process.argv.length < 3) {
+	if (process.argv.length != 3) {
 		console.log("Usage:");
 		console.log(`    ${process.argv[0]} ${process.argv[1]} [snapshot]}`);
 
-		return;
+	    process.exit(-1);
 	};
 
-	console.log("Loading Snapshot ...");
+	console.log("[lock-patcher] Loading Snapshot ...");
 	const snapshot = await loadJSONFile(process.argv[2]);
 
-	console.log(`Looking for package locks (in ${process.cwd()}) ...`)
+	console.log(`[lock-patcher] Looking for package locks (in ${process.cwd()}) ...`)
 	const foundPackageLocks = await loadAllPackageLocks(process.cwd());
-	console.log(`Found: ${foundPackageLocks}`);
+	console.log(`[lock-patcher] Found: ${foundPackageLocks}`);
 
 	const packageLocks = [];
-	console.log("Loading package-locks ...");
+	console.log("[lock-patcher] Loading package-locks ...");
 
 	for (const lock of foundPackageLocks) {
 		try {
@@ -110,16 +62,18 @@ const updateDependencies = async (snapshot, dependencies) => {
 			});
 		}
 		catch (err) {
-			console.error(`Could not load: ${lock}`);
+			console.error(`[lock-patcher] Could not load: ${lock}`);
 			console.error(err);
 		}
 	}
 
-	console.log("Patching locks ...");
+	console.log("[lock-patcher] Patching locks ...");
 
 	packageLocks.forEach(async (lock) => {
 		lock.parsed.dependencies = await updateDependencies(snapshot, lock.parsed.dependencies);
 		fs.writeFileSync(lock.path, JSON.stringify(lock.parsed), {encoding:'utf8',flag:'w'});
-		console.log(`Patched Sha in file ${lock.path} !`);
 	});
-})();
+})().catch((err) => {
+    console.error("[lock-patcher] Error:");
+    console.error(err);
+});
