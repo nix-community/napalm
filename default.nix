@@ -20,6 +20,8 @@ let
   # Returns a if a is not empty, otherwise returns b
   ifNotEmpty = a: b: if a != [] then a else b;
 
+  # Concats multiple snapshot's into single snapshot
+  # Needed when multiple locks are used
   concatSnapshots = snapshots: let
     allPkgsNames =
       pkgs.lib.foldl (acc: set: acc ++ (builtins.attrNames set)) [] snapshots;
@@ -31,7 +33,9 @@ let
     };
     in
       builtins.listToAttrs (builtins.map loadPkgVersions allPkgsNames);
-   
+
+  # Patches shebangs and elfs in npm package and returns derivation
+  # which contains package.tgz that is compressed patched package
   mkNpmTar = { pname, version, src, buildInputs }: pkgs.stdenv.mkDerivation {
       pname = "${pname}-patched";
       inherit version src buildInputs;
@@ -209,23 +213,8 @@ let
     , installPhase ? null
     , patchPackages ? false # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
       # if you are having `missing interpreter: /usr/bin/env` you should enable this option
-
-      # Npm override allows to call bash script before and after every
-      # npm call:
-    , npmOverride ? (preNpmHook != "" || postNpmHook != "")
-      # Warning:
-      # If you want to use local vairables in bash scripts
-      # written in preNpmHook or posNpmHook it is required
-      # to escape $ symbols with \$. Otherwise bash will used
-      # external variables, this way you can run for example:
-      # ```
-      # source $stdenv/setup
-      # ```
-
-      # Bash script to be called before npm call:
-    , preNpmHook ? ""
-      # Bash script to be called after npm call:
-    , postNpmHook ? ""
+    , preNpmHook ? "" # Bash script to be called before npm call
+    , postNpmHook ? "" # Bash script to be called after npm call
     , ...
     }:
       let
@@ -289,39 +278,50 @@ let
         # package name and version from the source package.json
         name = attrs.name or "${reformatPackageName pname}-${version}";
 
-        npmOverrideScript = ''
-            echo "Overriding npm"
+        # Script that will be executed instead of npm.
+        # This approach allows adding custom behavior between
+        # every npm call, even if it is nested.
+        npmOverrideScript = let
+          appendShebang = str: "#!${pkgs.runtimeShell}\n\n" + str;
 
-            # Create folder if it does not exists
-            mkdir -p npm-override-dir
+          preNpmHookScript = pkgs.writeScript "preNpmHookScript"
+            (appendShebang preNpmHook);
+          postNpmHookScript = pkgs.writeScript "postNpmHookScript"
+            (appendShebang postNpmHook);
 
-            cat > npm-override-dir/npm << EOF
-            #!${pkgs.bash}/bin/bash
-
-            # It is important to escape all $ as otherwise it bash
-            # that is creating this file substitutes it
+          in appendShebang ''
+            # It is important to escape all $ if you want to
+            # use local bash variables as this file will be
+            # flushed thourrgh another bash script.
+            # This way it is possible to use
+            # `source $stdenv/setup` as `$stdenv` is being resolved
+            # while being written to the file
 
             echo "Npm overrided sucesfully"
 
+            echo "Loading stdenv setup ..."
+            source $stdenv/setup
+
+            set -e
+
             echo "Running preNpmHook"
-            ${preNpmHook}
+            bash ${preNpmHookScript}
 
             echo "Running npm \$@"
 
-            ${nodejs}/bin/npm \$@ || exit -1
+            ${nodejs}/bin/npm \$@
 
             echo "Runing postNpmHook"
+            bash ${postNpmHookScript}
 
-            ${postNpmHook}
-            EOF
-            chmod +x npm-override-dir/npm
+            echo "Overzealously patching shebangs"
+            if [ -d node_modules ]; then find node_modules -type d -name bin | \
+                while read file; do patchShebangs \$file; done; fi
 
-            export PATH=$(pwd)/npm-override-dir:$PATH
         '';
       in
         pkgs.stdenv.mkDerivation (mkDerivationAttrs // {
           inherit name src;
-          npmCommands = pkgs.lib.concatStringsSep "\n" npmCommands;
           buildInputs = newBuildInputs;
 
           configurePhase = attrs.configurePhase or ''
@@ -365,21 +365,26 @@ let
 
             export CPATH="${nodejs}/include/node:$CPATH"
 
-            ${if npmOverride then npmOverrideScript else ""}
+            echo "Overriding npm"
+
+            # Create folder if it does not exists
+            mkdir -p npm-override-dir
+
+            cat > npm-override-dir/npm << EOF
+            ${npmOverrideScript}
+            EOF
+
+            chmod +x npm-override-dir/npm
+
+            # Makes custom npm script appear before real npm program
+            export PATH=$(pwd)/npm-override-dir:$PATH
 
             echo "Installing npm package"
 
-            echo "$npmCommands"
-
-            echo "$npmCommands" | \
-              while IFS= read -r c
-              do
-                echo "Running npm command: $c"
-                $c || (echo "$c: failure, aborting" && kill $napalm_REGISTRY_PID && exit 1)
-                echo "Overzealously patching shebangs"
-                if [ -d node_modules ]; then find node_modules -type d -name bin | \
-                  while read file; do patchShebangs $file; done; fi
-              done
+            # TODO: Consider renaming npmCommands to something like:
+            #       buildCommands and to treat it as a string and not
+            #       as a list of commands
+            ${pkgs.lib.concatStringsSep "\n" npmCommands}
 
             echo "Shutting down napalm registry"
             kill $napalm_REGISTRY_PID
