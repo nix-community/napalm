@@ -36,62 +36,81 @@ let
 
   # Patches shebangs and elfs in npm package and returns derivation
   # which contains package.tgz that is compressed patched package
-  mkNpmTar = { pname, version, src, buildInputs }: pkgs.stdenv.mkDerivation {
-      pname = "${pname}-patched";
-      inherit version src buildInputs;
+  #
+  # `customAttrs` argument allows user to override any field that is passed
+  # into the mkDerivation. It is a function that evaluates to set and overrides
+  # current mkDerivation arguments.
+  mkNpmTar = { pname, version, src, buildInputs, customAttrs ? null }:
+    let
+      prev = {
+        pname = "${pname}-patched";
+        inherit version src buildInputs;
 
-      dontPatch = true;
-      dontBuild = true;
+        dontPatch = true;
+        dontBuild = true;
 
-      configurePhase = ''
-      # Ensures that fixup phase will use these in the path
-      export PATH=${pkgs.lib.foldl (acc: v: "${acc}${v}/bin:") "" buildInputs}$PATH
-      '';
+        configurePhase = ''
+        runHook preConfigure
 
-      installPhase = ''
-      mkdir -p $out/package
-      cp -rf ./* $out/package
-      '';
+        # Ensures that fixup phase will use these in the path
+        export PATH=${pkgs.lib.foldl (acc: v: "${acc}${v}/bin:") "" buildInputs}$PATH
 
-      preFixup = ''
-      echo Ensuring that proper files are executable ...
+        runHook postConfigure
+        '';
 
-      # Split by newline instead of spaces in case 
-      # some filename contains space
-      OLD_IFS=$IFS
-      IFS=$'\n'
+        installPhase = ''
+        runHook preInstall
 
+        mkdir -p $out/package
+        cp -rf ./* $out/package
 
-      # This loop looks for files which may contain shebang
-      # and makes them executable if it is the case.
-      # This is useful, because patchShbang function patches 
-      # only files that are executable.
-      # 
-      # See: https://github.com/NixOS/nixpkgs/blob/ba3768aec02b16561ceca1caebdbeb91ae16963d/pkgs/build-support/setup-hooks/patch-shebangs.sh
+        runHook postInstall
+        '';
 
-      for file in $(find $out -type f \( -name "*.js" -or -name "*.sh" \)); do
-        grep -i '^#! */' "$file" && \
-            sed -i 's|^#! */|#!/|' "$file" && \
-            chmod +0100 "$file" || \
-            echo "$file should not be executable"
-      done
+        preFixup = ''
+        echo Ensuring that proper files are executable ...
 
-      IFS=$OLD_IFS
-      '';
+        # Split by newline instead of spaces in case
+        # some filename contains space
+        OLD_IFS=$IFS
+        IFS=$'\n'
 
 
-      postFixup = ''
-      cd $out
+        # This loop looks for files which may contain shebang
+        # and makes them executable if it is the case.
+        # This is useful, because patchShbang function patches
+        # only files that are executable.
+        #
+        # See: https://github.com/NixOS/nixpkgs/blob/ba3768aec02b16561ceca1caebdbeb91ae16963d/pkgs/build-support/setup-hooks/patch-shebangs.sh
 
-      # Package everything up
-      echo Packaging ${pname} ...
-      tar -czf package.tgz package
+        for file in $(find $out -type f \( -name "*.js" -or -name "*.sh" \)); do
+            grep -i '^#! */' "$file" && \
+                sed -i 's|^#! */|#!/|' "$file" && \
+                chmod +0100 "$file" || \
+                echo "$file should not be executable"
+        done
 
-      # Remove untared package
-      echo Cleanup of ${pname}
-      rm -rf ./package
-      '';
-    };
+        IFS=$OLD_IFS
+        '';
+
+
+        postFixup = ''
+        cd $out
+
+        # Package everything up
+        echo Packaging ${pname} ...
+        tar -czf package.tgz package
+
+        # Remove untared package
+        echo Cleanup of ${pname}
+        rm -rf ./package
+        '';
+        };
+    in
+      pkgs.stdenv.mkDerivation (
+        prev //
+        (if customAttrs == null then {}
+         else (customAttrs pkgs prev)));
   
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
@@ -103,7 +122,13 @@ let
   #     "other-package": { ... };
   #   }
   snapshotFromPackageLockJson =
-    { packageLockJson, pname, version, buildInputs, patchPackages }:
+    { packageLockJson
+    , pname ? null
+    , version ? null
+    , buildInputs ? [ ]
+    , patchPackages ? false
+    , customPatchPackages ? { }
+    }:
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
@@ -157,10 +182,10 @@ let
                 "${x.version}" = let
                   src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
                   out = mkNpmTar {
-                    inherit src;
+                    inherit src buildInputs;
                     pname = pkgs.lib.strings.sanitizeDerivationName x.name;
                     version = x.version;
-                    inherit buildInputs;
+                    customAttrs = customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
                   };
                 in if patchPackages then "${out}/package.tgz" else src;
               };
@@ -197,6 +222,7 @@ let
     src:
     attrs@
     { name ? null
+    , pname ? null
     , version ? null
       # Used by `napalm` to read the `package-lock.json`, `npm-shrinkwrap.json`
       # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
@@ -211,18 +237,27 @@ let
     , npmCommands ? [ "npm install --loglevel verbose --nodedir=${nodejs}/include/node" ]
     , buildInputs ? []
     , installPhase ? null
-    , patchPackages ? false # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
-      # if you are having `missing interpreter: /usr/bin/env` you should enable this option
+    , patchPackages ? customPatchPackages != { } # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
+    # if you are having `missing interpreter: /usr/bin/env` issue you should enable this option
+    , customPatchPackages ? { }
     , preNpmHook ? "" # Bash script to be called before npm call
     , postNpmHook ? "" # Bash script to be called after npm call
     , ...
     }:
-      let
+    assert name != null -> (pname == null && version == null);
+    let
         # remove all the attributes that are not part of the normal
         # stdenv.mkDerivation interface
         mkDerivationAttrs = builtins.removeAttrs attrs [
           "packageLock"
           "npmCommands"
+          "nodejs"
+          "packageLock"
+          "additionalPackageLocks"
+          "patchPackages"
+          "customPatchPackages"
+          "preNpmHook"
+          "postNpmHook"
         ];
 
         actualPackageLocks = let
@@ -243,13 +278,10 @@ let
             (concatSnapshots
               (builtins.map
                 (lock: snapshotFromPackageLockJson {
-                  inherit patchPackages;
+                  inherit patchPackages pname version customPatchPackages;
                   packageLockJson = lock;
-                  pname = attrs.name;
-                  version = attrs.version;
                   buildInputs = newBuildInputs;
-                })
-                actualPackageLocks)));
+                }) actualPackageLocks)));
 
         newBuildInputs = buildInputs ++ [
           haskellPackages.napalm-registry
@@ -271,12 +303,12 @@ let
           in builtins.concatStringsSep "-" non-null;
 
         packageJSON = readPackageJSON root;
-        pname = packageJSON.name or fallbackPackageName;
-        version = packageJSON.version or fallbackPackageVersion;
+        resolvedPname = attrs.pname or (packageJSON.name or fallbackPackageName);
+        resolvedVersion = attrs.version or (packageJSON.version or fallbackPackageVersion);
 
         # If name is not specified, read the package.json to load the
         # package name and version from the source package.json
-        name = attrs.name or "${reformatPackageName pname}-${version}";
+        name = attrs.name or "${reformatPackageName resolvedPname}-${resolvedVersion}";
 
         # Script that will be executed instead of npm.
         # This approach allows adding custom behavior between
@@ -340,7 +372,7 @@ let
          
             ${if patchPackages then ''
             echo "Patching npm packages integrity" 
-            node ${./scripts}/lock-patcher.mjs ${snapshot}
+            ${pkgs.nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
             '' else ""}
 
             echo "Starting napalm registry"
