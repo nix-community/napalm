@@ -239,7 +239,10 @@ let
     , installPhase ? null
     , patchPackages ? customPatchPackages != { } # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
     # if you are having `missing interpreter: /usr/bin/env` issue you should enable this option
-    , customPatchPackages ? { }
+    , customPatchPackages ? { } # This arguemnt is a set that has structure like: { "<Package Name>" = <override>; ... } or
+      # { "<Package name>"."<Package version>" = <override>; ... }, where <override> is a function that takes two arguments:
+      # `pkgs` (nixpkgs) and `prev` (default derivation arguments of the package) and returns new arguments that will override
+      # current mkDerivation arguments. This works similarly to the overrideAttrs method. See README.md
     , preNpmHook ? "" # Bash script to be called before npm call
     , postNpmHook ? "" # Bash script to be called after npm call
     , ...
