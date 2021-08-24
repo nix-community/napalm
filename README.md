@@ -6,7 +6,18 @@
 >
 > -- anonymous
 
-* [Building npm packages in Nix](#building-npm-packages-in-nix)
+**Table of contents**
+
+* [Building npm packages in Nix with Napalm](#building-npm-packages-in-nix-with-napalm)
+  * [Basic Napalm usage](#basic-napalm-usage)
+  * [Napalm with Nix flakes](#napalm-with-nix-flakes)
+* [More complicated scenarios with Napalm](#handling-complicated-scenarios-with-napalm)
+  * [Custom node.js version](#custom-nodejs-version)
+  * [Pre/Post Npm hooks](#prepost-npm-hooks)
+  * [Multiple package locks](#multiple-package-locks)
+  * [Patching Npm packages](#patching-npm-packages-before-fetching-them-with-npm)
+  * [Customizing patching mechanism of npm packages](#customizing-patching-mechanism-of-npm-packages)
+* [How does it work ?](#how-does-napalm-work-)
 * [Napalm - a lightweight npm registry](#napalm---a-lightweight-npm-registry)
 
 ## Building npm packages in Nix with Napalm
