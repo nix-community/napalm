@@ -234,7 +234,7 @@ let
 
       # Propagate --nodedir argument into npm install, as it fixes issue with
       # compiling with node-gyp package
-    , npmCommands ? [ "npm install --loglevel verbose --nodedir=${nodejs}/include/node" ]
+    , npmCommands ? "npm install --loglevel verbose --nodedir=${nodejs}/include/node"
     , buildInputs ? []
     , installPhase ? null
     , patchPackages ? customPatchPackages != { } # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
@@ -262,6 +262,13 @@ let
           "preNpmHook"
           "postNpmHook"
         ];
+
+        # New `npmCommands` should be just multiline string, but
+        # for backwards compatibility there is a list option
+        npmCommands = let
+          type = builtins.typeOf attrs.npmCommands;
+        in if type == "list" then builtins.concatStringsSep "\n" attrs.npmCommands
+           else attrs.npmCommands;
 
         actualPackageLocks = let
           actualPackageLocks' = additionalPackageLocks ++
@@ -416,10 +423,7 @@ let
 
             echo "Installing npm package"
 
-            # TODO: Consider renaming npmCommands to something like:
-            #       buildCommands and to treat it as a string and not
-            #       as a list of commands
-            ${pkgs.lib.concatStringsSep "\n" npmCommands}
+            ${npmCommands}
 
             echo "Shutting down napalm registry"
             kill $napalm_REGISTRY_PID

@@ -1,6 +1,6 @@
 {
   description = "Build NPM packages in Nix and lightweight NPM registry";
-  inputs.nixpkgs.url = "nixpkgs/master";
+  inputs.nixpkgs.url = "nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }:
     let
