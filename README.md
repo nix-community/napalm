@@ -48,7 +48,7 @@ Examples below assume that you have imported `napalm` in some way.
 ### Custom node.js version
 
 Napalm makes it quite simple to use custom node.js (with npm) version.
-This is controlled via `nodejs` argument. 
+This is controlled via `nodejs` argument.
 
 **Example 1**
 
@@ -88,7 +88,7 @@ napalm.buildPackage ./. {
 
 ### Pre/Post Npm hooks
 
-Napalm allows to specify commands that are runned before and after every `npm` call.
+Napalm allows to specify commands that are run before and after every `npm` call.
 These hooks work also for nested `npm` calls thanks to npm override mechanism.
 
 **Example**
@@ -99,14 +99,14 @@ Patching some folder with executable scripts containing shebangs (that may be ge
 { napalm, ... }:
 napalm.buildPackage ./. {
 	postNpmHook = ''
-	patchShebangs tools 	
-	''
+	patchShebangs tools
+	'';
 }
 ```
 
 ### Multiple package locks
 
-Napalms allows to specify multiple package locks. 
+Napalms allows to specify multiple package locks.
 This may be useful for some project which consist of some smaller projects.
 
 **Example**
@@ -145,7 +145,7 @@ napalm.buildPackage ./. {
 
 ### Customizing patching mechanism of npm packages
 
-Sometimes it is required to manually patch some package. 
+Sometimes it is required to manually patch some package.
 Napalm allows that via `customPatchPackages` attribute.
 This attribute is a set of that overrides for packages that will be patched.
 
@@ -154,7 +154,7 @@ This attribute is a set of that overrides for packages that will be patched.
 ```nix
 { napalm, ... }:
 napalm.buildPackage ./. {
-	# Version is not required. When it is not specified it 
+	# Version is not required. When it is not specified it
 	# applies override to all packages with that name.
 	#
 	# Arguemnts that are passed into custom patch:
@@ -162,20 +162,31 @@ napalm.buildPackage ./. {
 	# `prev` - Current set that will be passed to mkDerivation
 	customPatchPackages."react-native"."0.65.0" = pkgs: prev: {
 		EXAMPLE_ENV_VAR = "XYZ";
+		dontBuild = false;
 		buildPhase = ''
-		# You can copy some stuff here or run some custom stuff	
+		# You can copy some stuff here or run some custom stuff
 		'';
 	};
 }
 ```
 
-## How it works ?
+## How does Napalm work ?
 
-TODO
+These are general steps that Napalm makes when building packages (if you want to learn more, see source code of `default.nix`):
+
+1. Napalm loads all `package-lock.json` files and parses them. Then it fetches all specified packages into the Nix Store.
+2. (optional) Napalm patches npm packages and stores their output in new location. Then uses this location as default package location in Nix Store.
+3. Napalm creates snapshot that consists of packages names, version and paths to locations in Nix Store that contain them.
+4. (optional) Napalm patches `package-lock.json` integrity if the packages were patched, so that they will work with `npm install`.
+5. Napalm sets up `napalm-registry` which as a main argument accepts snapshot of npm packages and them serves them as if it was npm registry server.
+6. Napalm sets up npm so that it thinks `napalm-registry` server is default npm registry server.
+7. Napalm overrides npm which allows using custom npm hooks (every time it is called) as well as some other default patching activities.
+8. Napalm calls all the npm commands.
+9. Napalm installs everything automatically or based on what was specified in `installPhase`.
 
 ## Napalm - a lightweight npm registry
 
-Under the hood napalm uses its own package regitry. The registry is available
+Under the hood napalm uses its own package registry. The registry is available
 in [default.nix](./default.nix) as `napalm-registry`.
 
 ```
