@@ -230,11 +230,12 @@ let
     , root ? src
     , nodejs ? pkgs.nodejs # Node js and npm version to be used, like pkgs.nodejs-16_x
     , packageLock ? null
-    , additionalPackageLocks ? [] # Sometimes node.js may have multiple package locks, discoveredpackagelock will be used even if this array is specified
-
-      # Propagate --nodedir argument into npm install, as it fixes issue with
-      # compiling with node-gyp package
-    , npmCommands ? "npm install --loglevel verbose --nodedir=${nodejs}/include/node"
+    , additionalPackageLocks ? [] # Sometimes node.js may have multiple package locks.
+      # automatic package-lock.json discovery in the root of the project
+      # will be used even if this array is specified
+    , npmCommands ?
+      "npm install --loglevel verbose --nodedir=${nodejs}/include/node" # These are the commands that are supposed to use npm to install the package.
+      # --nodedir argument helps with building node-gyp based packages.
     , buildInputs ? []
     , installPhase ? null
     , patchPackages ? customPatchPackages != { } # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
