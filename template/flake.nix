@@ -2,14 +2,14 @@
   description = "An example of Napalm with flakes";
 
   # Nixpkgs / NixOS version to use.
-  inputs.nixpkgs.url = "nixpkgs/master";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   # Import napalm
   inputs.napalm.url = "github:nix-community/napalm";
 
   outputs = { self, nixpkgs, napalm }:
     let
-      # Generate a user-friendly version numer.
+      # Generate a user-friendly version number.
       version = builtins.substring 0 8 self.lastModifiedDate;
 
       # System types to support.
@@ -23,33 +23,30 @@
       nixpkgsFor = forAllSystems (system:
         import nixpkgs {
           inherit system;
-          # Use napalm as your overlay
-          overlays = [ self.overlay napalm.overlay ];
+          # Add napalm to you overlay's list
+          overlays = [
+            self.overlay
+            napalm.overlay
+          ];
         });
 
     in {
-
       # A Nixpkgs overlay.
       overlay = final: prev:
-        let
-          # In case you do not want to use overlay, you can use:
-          buildNapalmPackage = (napalm.overlay final prev).napalm.buildPackage;
-          # It would work the same way as final.napalm.buildPackage in this case
-        in {
-          # Example packages
-          hello-world = final.napalm.buildPackage ./hello-world { };
+        {
+          # Example package
           hello-world-deps = final.napalm.buildPackage ./hello-world-deps { };
         };
 
       # Provide your packages for selected system types.
       packages = forAllSystems (system: {
-        inherit (nixpkgsFor.${system}) hello-world hello-world-deps;
+        inherit (nixpkgsFor.${system}) hello-world-deps;
       });
 
       # The default package for 'nix build'. This makes sense if the
       # flake provides only one package or there is a clear "main"
       # package.
       defaultPackage =
-        forAllSystems (system: self.packages.${system}.hello-world);
+        forAllSystems (system: self.packages.${system}.hello-world-deps);
     };
 }

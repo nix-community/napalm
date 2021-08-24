@@ -16,7 +16,7 @@ let
 
   # Helper functions
   # Returns a if a is not null, otherwise returns b
-  ifNotNull = a: b: if ! isNull a then a else b;
+  ifNotNull = a: b: if a != null then a else b;
   # Returns a if a is not empty, otherwise returns b
   ifNotEmpty = a: b: if a != [] then a else b;
 
@@ -266,14 +266,17 @@ let
 
         # New `npmCommands` should be just multiline string, but
         # for backwards compatibility there is a list option
-        npmCommands = let
+        parsedNpmCommands = let
           type = builtins.typeOf attrs.npmCommands;
-        in if type == "list" then builtins.concatStringsSep "\n" attrs.npmCommands
-           else attrs.npmCommands;
+        in if attrs ? npmCommands then
+             (if type == "list"
+               then builtins.concatStringsSep "\n" attrs.npmCommands
+               else attrs.npmCommands)
+           else npmCommands;
 
         actualPackageLocks = let
           actualPackageLocks' = additionalPackageLocks ++
-                                ifNotNull [(ifNotNull packageLock discoveredPackageLock)] [];
+                                [(ifNotNull packageLock discoveredPackageLock)];
         in ifNotEmpty actualPackageLocks' (abort ''
             Could not find a suitable package-lock in ${src}.
             If you specify a 'packageLock' or 'packageLocks' to 'buildPackage', I will use that.
@@ -424,7 +427,7 @@ let
 
             echo "Installing npm package"
 
-            ${npmCommands}
+            ${parsedNpmCommands}
 
             echo "Shutting down napalm registry"
             kill $napalm_REGISTRY_PID

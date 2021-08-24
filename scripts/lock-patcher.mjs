@@ -2,6 +2,10 @@
 
 /*
   This node.js script is required in order to patch package-lock.json with new sha512 hashes.
+
+  It loads all `package-lock.json` files that are in root of the project as well as these
+  nested inside folders and patches their integrity based on packages snapshot created by Nix.
+
   Sadly this can't be done with Nix due to restricted evaluation mode.
   This script should not have any external npm dependencies
 */
@@ -10,12 +14,14 @@ import fs from "fs"
 
 import { loadJSONFile, loadAllPackageLocks, getHashOf } from "./lib.mjs"
 
+// Returns new set, that is modified dependencies argument
+// with proper integirty hashes
 const updateDependencies = async (snapshot, dependencies) => {
 	let result = {};
 
 	for (const packageName in dependencies) {
 		const version = dependencies[packageName].version;
-		result[packageName] = { ...dependencies[packageName] };
+		result[packageName] = { ...dependencies[packageName] }; // Copies dependences to the result set
 		 try {
 			const hashType = dependencies[packageName].integrity.split("-")[0];
 			result[packageName].integrity = await getHashOf(hashType, snapshot[packageName][version]);
