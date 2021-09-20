@@ -10,44 +10,43 @@
   This script should not have any external npm dependencies
 */
 
-import fs from "fs"
+import fsPromises from "fs/promises"
 
-import { loadJSONFile, loadAllPackageLocks, getHashOf } from "./lib.mjs"
+import { loadJSONFile, loadAllPackageLocks, getHashOf, mapOverAttrsAsync } from "./lib.mjs"
 
 // Returns new set, that is modified dependencies argument
 // with proper integirty hashes
-const updateDependencies = async (snapshot, dependencies) => {
-	let result = {};
+const updateDependencies = (snapshot, dependencies) => mapOverAttrsAsync(async (packageName, pkg) => {
+	const hashType = pkg.integrity.split("-")[0];
 
-	for (const packageName in dependencies) {
-		const version = dependencies[packageName].version;
-		result[packageName] = { ...dependencies[packageName] }; // Copies dependences to the result set
-		 try {
-			const hashType = dependencies[packageName].integrity.split("-")[0];
-			result[packageName].integrity = await getHashOf(hashType, snapshot[packageName][version]);
-
-			if (result[packageName].integrity !== dependencies[packageName].integrity)
-				console.log(`[lock-patcher] ${packageName}-${version}: ${dependencies[packageName].integrity} -> ${result[packageName].integrity}`);
+	try {
+		if (pkg.dependencies) {
+			return {
+				...pkg,
+				integrity: await getHashOf(hashType, snapshot[packageName][pkg.version]),
+				dependencies: await updateDependencies(snapshot, pkg.dependencies)
+			};
 		}
-		 catch (err) {
-			console.error(`[lock-patcher] At: ${packageName}-${version} (${JSON.stringify(snapshot[packageName])})`);
-			console.error(err);
+		else {
+			return {
+				...pkg,
+				integrity: await getHashOf(hashType, snapshot[packageName][pkg.version])
+			};
 		}
-
-		if (dependencies[packageName].dependencies) {
-			result[packageName].dependencies = await updateDependencies(snapshot, dependencies[packageName].dependencies);
-		};
 	}
-
-	return result;
-};
+	catch (err) {
+		console.error(`[lock-patcher] At: ${packageName}-${pkg.version} (${JSON.stringify(snapshot[packageName])})`);
+		console.error(err);
+		return pkg;
+	}
+}, dependencies);
 
 (async () => {
 	if (process.argv.length != 3) {
 		console.log("Usage:");
-		console.log(`    ${process.argv[0]} ${process.argv[1]} [snapshot]}`);
+		console.log(`    ${process.argv[0]} ${process.argv[1]} [snapshot]`);
 
-	    process.exit(-1);
+		process.exit(-1);
 	};
 
 	console.log("[lock-patcher] Loading Snapshot ...");
@@ -57,29 +56,33 @@ const updateDependencies = async (snapshot, dependencies) => {
 	const foundPackageLocks = await loadAllPackageLocks(process.cwd());
 	console.log(`[lock-patcher] Found: ${foundPackageLocks}`);
 
-	const packageLocks = [];
 	console.log("[lock-patcher] Loading package-locks ...");
-
-	for (const lock of foundPackageLocks) {
-		try {
-			packageLocks.push({
-				parsed: await loadJSONFile(lock),
-				path: lock
-			});
-		}
-		catch (err) {
-			console.error(`[lock-patcher] Could not load: ${lock}`);
-			console.error(err);
-		}
-	}
+	const packageLocks = (await Promise.all(
+		foundPackageLocks.map(async (lock) => {
+			try {
+				return {
+					parsed: await loadJSONFile(lock),
+					path: lock
+				};
+			}
+			catch (err) {
+				console.error(`[lock-patcher] Could not load: ${lock}`);
+				console.error(err);
+				return null;
+			}
+		}))).filter(val => val != null);
 
 	console.log("[lock-patcher] Patching locks ...");
 
 	packageLocks.forEach(async (lock) => {
-		lock.parsed.dependencies = await updateDependencies(snapshot, lock.parsed.dependencies);
-		fs.writeFileSync(lock.path, JSON.stringify(lock.parsed), {encoding:'utf8',flag:'w'});
+		const set = {
+			...lock.parsed,
+			dependencies: await updateDependencies(snapshot, lock.parsed.dependencies)
+		};
+
+		await fsPromises.writeFile(lock.path, JSON.stringify(set), { encoding: 'utf8', flag: 'w' });
 	});
 })().catch((err) => {
-    console.error("[lock-patcher] Error:");
-    console.error(err);
+	console.error("[lock-patcher] Error:");
+	console.error(err);
 });

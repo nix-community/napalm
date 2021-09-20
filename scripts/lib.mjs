@@ -1,53 +1,40 @@
-import fs from "fs"
-import crypto from "crypto"
+import fsPromises from "fs/promises";
+import crypto from "crypto";
 
 const loadAllPackageLocks = async (root) => {
-	const files = fs.readdirSync(root, { withFileTypes: true });
-	let locks = [];
+	const files = await fsPromises.readdir(root, { withFileTypes: true });
 
-	for (const file of files) {
+	return await files.reduce(async (locksP, file) => {
 		const fileName = `${root}/${file.name}`;
+		const locks = await locksP;
 
-		if (file.isDirectory()) {
-			const additionalLocks = await loadAllPackageLocks(fileName);
-			locks = locks.concat(additionalLocks);
-		}
+		if (file.isDirectory())
+			return [...locks, ...(await loadAllPackageLocks(fileName))];
 
 		if (file.name === "package-lock.json")
-			locks.push(fileName);
+			return [...locks, fileName];
+
+		return locks;
+	}, Promise.resolve([]));
+};
+
+const loadJSONFile = (file) => fsPromises.readFile(file, { encoding: 'utf8' }).then(JSON.parse);
+
+const getHashOf = (type, file) => fsPromises.readFile(file).then((contents) => {
+	const hash = crypto.createHash(type);
+	hash.setEncoding("hex");
+	hash.update(contents);
+	return `${type}-${hash.digest('base64')}`;
+});
+
+const mapOverAttrsAsync = async (lambda, set) => {
+	const set_copy = { ...set };
+
+	for (const attrName in set) {
+		set_copy[attrName] = await lambda(attrName, set_copy[attrName]);
 	}
-	return locks;
+
+	return set_copy;
 };
 
-const loadJSONFile = (file) => {
-	return new Promise((resolve, reject) => {
-		fs.readFile(file, 'utf8', (err, data) => {
-			if (err) reject(err);
-
-			const parsed = JSON.parse(data);
-
-			resolve(parsed);
-		});
-	});
-};
-
-const getHashOf = (type, file) => {
-	return new Promise((resolve, reject) => {
-		const fd = fs.createReadStream(file);
-		const hash = crypto.createHash(type);
-
-		hash.setEncoding("hex");
-
-		fd.on("end", () => {
-			hash.end();
-			resolve(`${type}-${hash.digest('base64')}`);
-		});
-
-		fd.on("error", reject);
-
-		fd.pipe(hash);
-	});
-};
-
-
-export { loadAllPackageLocks, loadJSONFile, getHashOf }
+export { loadAllPackageLocks, loadJSONFile, getHashOf, mapOverAttrsAsync }
