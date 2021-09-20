@@ -15,13 +15,9 @@ let
      else builtins.hasAttr filename (builtins.readDir dir);
 
   # Helper functions
-  # Returns a if a is not null, otherwise returns b
   ifNotNull = a: b: if a != null then a else b;
-  # Returns a if a is not empty, otherwise returns b
   ifNotEmpty = a: b: if a != [] then a else b;
 
-  # Concats multiple snapshot's into single snapshot
-  # Needed when multiple locks are used
   concatSnapshots = snapshots: let
     allPkgsNames =
       pkgs.lib.foldl (acc: set: acc ++ (builtins.attrNames set)) [] snapshots;
@@ -86,8 +82,7 @@ let
         for file in $(find $out -type f \( -name "*.js" -or -name "*.sh" \)); do
             grep -i '^#! */' "$file" && \
                 sed -i 's|^#! */|#!/|' "$file" && \
-                chmod +0100 "$file" || \
-                echo "$file should not be executable"
+                chmod +0100 "$file"
         done
 
         IFS=$OLD_IFS
@@ -178,8 +173,8 @@ let
           if builtins.hasAttr "resolved" x.obj
           then
             {
-              "${x.name}" = {
-                "${x.version}" = let
+              ${x.name} = {
+                ${x.version} = let
                   src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
                   out = mkNpmTar {
                     inherit src buildInputs;
@@ -250,7 +245,7 @@ let
     }:
     assert name != null -> (pname == null && version == null);
     let
-        # remove all the attributes that are not part of the normal
+        # Remove all the attributes that are not part of the normal
         # stdenv.mkDerivation interface
         mkDerivationAttrs = builtins.removeAttrs attrs [
           "packageLock"
@@ -338,7 +333,7 @@ let
           in appendShebang ''
             # It is important to escape all $ if you want to
             # use local bash variables as this file will be
-            # flushed thourrgh another bash script.
+            # flushed through another bash script.
             # This way it is possible to use
             # `source $stdenv/setup` as `$stdenv` is being resolved
             # while being written to the file
@@ -384,10 +379,10 @@ let
             # TODO: why does the unpacker not set the sourceRoot?
             sourceRoot=$PWD
          
-            ${if patchPackages then ''
+            ${pkgs.lib.optionalString patchPackages ''
             echo "Patching npm packages integrity" 
             ${pkgs.nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
-            '' else ""}
+            ''}
 
             echo "Starting napalm registry"
 
