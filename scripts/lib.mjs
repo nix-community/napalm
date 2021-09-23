@@ -1,22 +1,19 @@
 import fsPromises from "fs/promises";
 import crypto from "crypto";
 
-const loadAllPackageLocks = async (root) => {
-	const files = await fsPromises.readdir(root, { withFileTypes: true });
+const loadAllPackageLocks = (root) =>
+	fsPromises.readdir(root, { withFileTypes: true })
+		.then(files =>
+			files.reduce(async (locksP, file) => {
+				const fileName = `${root}/${file.name}`;
+				const locks = await locksP;
 
-	return await files.reduce(async (locksP, file) => {
-		const fileName = `${root}/${file.name}`;
-		const locks = await locksP;
-
-		if (file.isDirectory())
-			return [...locks, ...(await loadAllPackageLocks(fileName))];
-
-		if (file.name === "package-lock.json")
-			return [...locks, fileName];
-
-		return locks;
-	}, Promise.resolve([]));
-};
+				return file.isDirectory() ?
+					[...locks, ...(await loadAllPackageLocks(fileName))]
+					: (file.name === "package-lock.json") ?
+						[...locks, fileName] :
+						locks;
+			}, Promise.resolve([])));
 
 const loadJSONFile = (file) => fsPromises.readFile(file, { encoding: 'utf8' }).then(JSON.parse);
 
@@ -27,14 +24,4 @@ const getHashOf = (type, file) => fsPromises.readFile(file).then((contents) => {
 	return `${type}-${hash.digest('base64')}`;
 });
 
-const mapOverAttrsAsync = async (lambda, set) => {
-	const set_copy = { ...set };
-
-	for (const attrName in set) {
-		set_copy[attrName] = await lambda(attrName, set_copy[attrName]);
-	}
-
-	return set_copy;
-};
-
-export { loadAllPackageLocks, loadJSONFile, getHashOf, mapOverAttrsAsync }
+export { loadAllPackageLocks, loadJSONFile, getHashOf }
