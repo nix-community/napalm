@@ -4,37 +4,37 @@
 # description of the napalm-registry. Some tests are also present at the end of
 # the file.
 
-{ pkgs ? import ./nix {} }:
+{ pkgs ? import ./nix { }, lib ? pkgs.lib }:
 let
   fallbackPackageName = "build-npm-package";
   fallbackPackageVersion = "0.0.0";
 
   hasFile = dir: filename:
-    if pkgs.lib.versionAtLeast builtins.nixVersion "2.3" then
+    if lib.versionAtLeast builtins.nixVersion "2.3" then
       builtins.pathExists (dir + "/${filename}")
     else
       builtins.hasAttr filename (builtins.readDir dir);
 
   # Helper functions
   ifNotNull = a: b: if a != null then a else b;
-  ifNotEmpty = a: b: if a != [] then a else b;
+  ifNotEmpty = a: b: if a != [ ] then a else b;
 
   concatSnapshots = snapshots:
     let
       allPkgsNames =
-        pkgs.lib.foldl (acc: set: acc ++ (builtins.attrNames set)) []
+        lib.foldl (acc: set: acc ++ (builtins.attrNames set)) [ ]
           snapshots;
       loadPkgVersions = name:
         let
           allVersions =
-            pkgs.lib.foldl (acc: set: acc // set.${name} or {}) {} snapshots;
+            lib.foldl (acc: set: acc // set.${name} or { }) { } snapshots;
         in
-          {
-            inherit name;
-            value = allVersions;
-          };
+        {
+          inherit name;
+          value = allVersions;
+        };
     in
-      builtins.listToAttrs (builtins.map loadPkgVersions allPkgsNames);
+    builtins.listToAttrs (builtins.map loadPkgVersions allPkgsNames);
 
   # Patches shebangs and elfs in npm package and returns derivation
   # which contains package.tgz that is compressed patched package
@@ -55,7 +55,7 @@ let
           runHook preConfigure
 
           # Ensures that fixup phase will use these in the path
-          export PATH=${pkgs.lib.makeBinPath buildInputs}:$PATH
+          export PATH=${lib.makeBinPath buildInputs}:$PATH
 
           runHook postConfigure
         '';
@@ -107,8 +107,8 @@ let
         '';
       };
     in
-      pkgs.stdenv.mkDerivation
-        (prev // (if customAttrs == null then {} else (customAttrs pkgs prev)));
+    pkgs.stdenv.mkDerivation
+      (prev // (if customAttrs == null then { } else (customAttrs pkgs prev)));
 
   # Reads a package-lock.json and assembles a snapshot with all the packages of
   # which the URL and sha are known. The resulting snapshot looks like the
@@ -123,84 +123,84 @@ let
     { packageLockJson
     , pname ? null
     , version ? null
-    , buildInputs ? []
+    , buildInputs ? [ ]
     , patchPackages ? false
-    , customPatchPackages ? {}
+    , customPatchPackages ? { }
     }:
-      let
-        packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
+    let
+      packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
-        # Load custom name and version of the program in case it was specified and
-        # not specified by the package-lock.json
-        topPackageName =
-          packageLock.name or (ifNotNull pname fallbackPackageName);
+      # Load custom name and version of the program in case it was specified and
+      # not specified by the package-lock.json
+      topPackageName =
+        packageLock.name or (ifNotNull pname fallbackPackageName);
 
-        updateTopPackageVersion = obj:
-          {
-            version = ifNotNull version fallbackPackageVersion;
-          } // obj;
+      updateTopPackageVersion = obj:
+        {
+          version = ifNotNull version fallbackPackageVersion;
+        } // obj;
 
-        # XXX: Creates a "node" for genericClosure. We include whether or not
-        # the packages contains an integrity, and if so the integriy as well,
-        # in the key. The reason is that the same package and version pair can
-        # be found several time in a package-lock.json.
-        mkNode = name: obj: {
-          inherit name obj;
-          inherit (obj) version;
-          key =
-            if builtins.hasAttr "integrity" obj then
-              "${name}-${obj.version}-${obj.integrity}"
-            else
-              "${name}-${obj.version}-no-integrity";
-          next =
-            if builtins.hasAttr "dependencies" obj then
-              pkgs.lib.mapAttrsToList mkNode (obj.dependencies)
-            else
-              [];
-        };
+      # XXX: Creates a "node" for genericClosure. We include whether or not
+      # the packages contains an integrity, and if so the integriy as well,
+      # in the key. The reason is that the same package and version pair can
+      # be found several time in a package-lock.json.
+      mkNode = name: obj: {
+        inherit name obj;
+        inherit (obj) version;
+        key =
+          if builtins.hasAttr "integrity" obj then
+            "${name}-${obj.version}-${obj.integrity}"
+          else
+            "${name}-${obj.version}-no-integrity";
+        next =
+          if builtins.hasAttr "dependencies" obj then
+            lib.mapAttrsToList mkNode (obj.dependencies)
+          else
+            [ ];
+      };
 
-        # The list of all packages discovered in the package-lock, excluding
-        # the top-level package.
-        flattened = builtins.genericClosure {
-          startSet =
-            [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
-          operator = x: x.next;
-        };
+      # The list of all packages discovered in the package-lock, excluding
+      # the top-level package.
+      flattened = builtins.genericClosure {
+        startSet =
+          [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
+        operator = x: x.next;
+      };
 
-        # Create an entry for the snapshot, e.g.
-        #     { some-package = { some-version = { url = ...; shaX = ...} ; }; }
-        snapshotEntry = x:
-          let
-            sha =
-              if pkgs.lib.hasPrefix "sha1-" x.obj.integrity then {
-                sha1 = pkgs.lib.removePrefix "sha1-" x.obj.integrity;
-              } else if pkgs.lib.hasPrefix "sha512-" x.obj.integrity then {
-                sha512 = pkgs.lib.removePrefix "sha512-" x.obj.integrity;
-              } else
-                abort "Unknown sha for ${x.obj.integrity}";
-          in
-            if builtins.hasAttr "resolved" x.obj then {
-              ${x.name} = {
-                ${x.version} =
-                  let
-                    src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
-                    out = mkNpmTar {
-                      inherit src buildInputs;
-                      pname = pkgs.lib.strings.sanitizeDerivationName x.name;
-                      version = x.version;
-                      customAttrs =
-                        customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
-                    };
-                  in
-                    if patchPackages then "${out}/package.tgz" else src;
-              };
+      # Create an entry for the snapshot, e.g.
+      #     { some-package = { some-version = { url = ...; shaX = ...} ; }; }
+      snapshotEntry = x:
+        let
+          sha =
+            if lib.hasPrefix "sha1-" x.obj.integrity then {
+              sha1 = lib.removePrefix "sha1-" x.obj.integrity;
+            } else if lib.hasPrefix "sha512-" x.obj.integrity then {
+              sha512 = lib.removePrefix "sha512-" x.obj.integrity;
             } else
-              {};
+              abort "Unknown sha for ${x.obj.integrity}";
+        in
+        if builtins.hasAttr "resolved" x.obj then {
+          ${x.name} = {
+            ${x.version} =
+              let
+                src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
+                out = mkNpmTar {
+                  inherit src buildInputs;
+                  pname = lib.strings.sanitizeDerivationName x.name;
+                  version = x.version;
+                  customAttrs =
+                    customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
+                };
+              in
+              if patchPackages then "${out}/package.tgz" else src;
+          };
+        } else
+          { };
 
-        mergeSnapshotEntries = acc: x:
-          pkgs.lib.recursiveUpdate acc (snapshotEntry x);
-      in
-        pkgs.lib.foldl mergeSnapshotEntries {} flattened;
+      mergeSnapshotEntries = acc: x:
+        lib.recursiveUpdate acc (snapshotEntry x);
+    in
+    lib.foldl mergeSnapshotEntries { } flattened;
 
   # Returns either the package-lock or the npm-shrinkwrap. If none is found
   # returns null.
@@ -216,156 +216,146 @@ let
   # attrset.
   readPackageJSON = root:
     if hasFile root "package.json" then
-      pkgs.lib.importJSON (root + "/package.json")
+      lib.importJSON (root + "/package.json")
     else
-      builtins.trace "WARN: package.json not found in ${toString root}" {};
+      builtins.trace "WARN: package.json not found in ${toString root}" { };
 
   # Builds an npm package, placing all the executables the 'bin' directory.
   # All attributes are passed to 'runCommand'.
   #
   # TODO: document environment variables that are set by each phase
   buildPackage = src:
-  attrs@{ name ? null
-  , pname ? null
-  , version ? null
-    # Used by `napalm` to read the `package-lock.json`, `npm-shrinkwrap.json`
-    # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
-    # is not set, it defaults to `src`.
-  , root ? src
-  , nodejs ? pkgs.nodejs # Node js and npm version to be used, like pkgs.nodejs-16_x
-  , packageLock ? null
-  , additionalPackageLocks ? [] # Sometimes node.js may have multiple package locks.
-    # automatic package-lock.json discovery in the root of the project
-    # will be used even if this array is specified
-  , npmCommands ? "npm install --loglevel verbose --nodedir=${nodejs}/include/node" # These are the commands that are supposed to use npm to install the package.
-    # --nodedir argument helps with building node-gyp based packages.
-  , buildInputs ? []
-  , installPhase ? null
-  , patchPackages ? customPatchPackages
-    != {} # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
-    # if you are having `missing interpreter: /usr/bin/env` issue you should enable this option
-  , customPatchPackages ? {} # This argument is a set that has structure like: { "<Package Name>" = <override>; ... } or
-    # { "<Package name>"."<Package version>" = <override>; ... }, where <override> is a function that takes two arguments:
-    # `pkgs` (nixpkgs) and `prev` (default derivation arguments of the package) and returns new arguments that will override
-    # current mkDerivation arguments. This works similarly to the overrideAttrs method. See README.md
-  , preNpmHook ? "" # Bash script to be called before npm call
-  , postNpmHook ? "" # Bash script to be called after npm call
-  , ...
-  }:
-    assert name != null -> (pname == null && version == null);
-    let
-      # Remove all the attributes that are not part of the normal
-      # stdenv.mkDerivation interface
-      mkDerivationAttrs = builtins.removeAttrs attrs [
-        "packageLock"
-        "npmCommands"
-        "nodejs"
-        "packageLock"
-        "additionalPackageLocks"
-        "patchPackages"
-        "customPatchPackages"
-        "preNpmHook"
-        "postNpmHook"
-      ];
+    attrs@{ name ? null
+    , pname ? null
+    , version ? null
+      # Used by `napalm` to read the `package-lock.json`, `npm-shrinkwrap.json`
+      # and `npm-shrinkwrap.json` files. May be different from `src`. When `root`
+      # is not set, it defaults to `src`.
+    , root ? src
+    , nodejs ? pkgs.nodejs # Node js and npm version to be used, like pkgs.nodejs-16_x
+    , packageLock ? null
+    , additionalPackageLocks ? [ ] # Sometimes node.js may have multiple package locks.
+      # automatic package-lock.json discovery in the root of the project
+      # will be used even if this array is specified
+    , npmCommands ? "npm install --loglevel verbose --nodedir=${nodejs}/include/node" # These are the commands that are supposed to use npm to install the package.
+      # --nodedir argument helps with building node-gyp based packages.
+    , buildInputs ? [ ]
+    , installPhase ? null
+    , patchPackages ? customPatchPackages
+        != { } # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
+      # if you are having `missing interpreter: /usr/bin/env` issue you should enable this option
+    , customPatchPackages ? { } # This argument is a set that has structure like: { "<Package Name>" = <override>; ... } or
+      # { "<Package name>"."<Package version>" = <override>; ... }, where <override> is a function that takes two arguments:
+      # `pkgs` (nixpkgs) and `prev` (default derivation arguments of the package) and returns new arguments that will override
+      # current mkDerivation arguments. This works similarly to the overrideAttrs method. See README.md
+    , preNpmHook ? "" # Bash script to be called before npm call
+    , postNpmHook ? "" # Bash script to be called after npm call
+    , ...
+    }:
+      assert name != null -> (pname == null && version == null);
+      let
+        # Remove all the attributes that are not part of the normal
+        # stdenv.mkDerivation interface
+        mkDerivationAttrs = builtins.removeAttrs attrs [
+          "packageLock"
+          "npmCommands"
+          "nodejs"
+          "packageLock"
+          "additionalPackageLocks"
+          "patchPackages"
+          "customPatchPackages"
+          "preNpmHook"
+          "postNpmHook"
+        ];
 
-      # New `npmCommands` should be just multiline string, but
-      # for backwards compatibility there is a list option
-      parsedNpmCommands =
-        let
-          type = builtins.typeOf attrs.npmCommands;
-        in
+        # New `npmCommands` should be just multiline string, but
+        # for backwards compatibility there is a list option
+        parsedNpmCommands =
+          let
+            type = builtins.typeOf attrs.npmCommands;
+          in
           if attrs ? npmCommands then
             (
               if type == "list" then
                 builtins.concatStringsSep "\n" attrs.npmCommands
               else
                 attrs.npmCommands
-            )
-          else
+            ) else
             npmCommands;
 
-      actualPackageLocks =
-        let
-          actualPackageLocks' = additionalPackageLocks
-          ++ [ (ifNotNull packageLock discoveredPackageLock) ];
-        in
-          ifNotEmpty actualPackageLocks' (
-            abort ''
-              Could not find a suitable package-lock in ${src}.
-              If you specify a 'packageLock' or 'packageLocks' to 'buildPackage', I will use that.
-              Otherwise, if there is a file 'package-lock.json' in ${src}, I will use that.
-              Otherwise, if there is a file 'npm-shrinkwrap.json' in ${src}, I will use that.
-              Otherwise, you will see this error message.
-            ''
-          );
+        actualPackageLocks =
+          let
+            actualPackageLocks' = additionalPackageLocks ++ [ (ifNotNull packageLock discoveredPackageLock) ];
+          in
+          ifNotEmpty actualPackageLocks' (abort ''
+            Could not find a suitable package-lock in ${src}.
+            If you specify a 'packageLock' or 'packageLocks' to 'buildPackage', I will use that.
+            Otherwise, if there is a file 'package-lock.json' in ${src}, I will use that.
+            Otherwise, if there is a file 'npm-shrinkwrap.json' in ${src}, I will use that.
+            Otherwise, you will see this error message.
+          '');
 
-      discoveredPackageLock = findPackageLock root;
+        discoveredPackageLock = findPackageLock root;
 
-      snapshot = pkgs.writeText "npm-snapshot" (
-        builtins.toJSON (
-          concatSnapshots
-            (
-              builtins.map
-                (
-                  lock:
-                    snapshotFromPackageLockJson {
-                      inherit patchPackages pname version customPatchPackages;
-                      packageLockJson = lock;
-                      buildInputs = newBuildInputs;
-                    }
-                )
-                actualPackageLocks
-            )
-        )
-      );
+        snapshot = pkgs.writeText "npm-snapshot" (
+          builtins.toJSON (
+            concatSnapshots
+              (
+                builtins.map
+                  (lock: snapshotFromPackageLockJson {
+                    inherit patchPackages pname version customPatchPackages;
+                    packageLockJson = lock;
+                    buildInputs = newBuildInputs;
+                  })
+                  actualPackageLocks
+              )
+          )
+        );
 
-      newBuildInputs = buildInputs ++ [
-        haskellPackages.napalm-registry
-        pkgs.fswatch
-        pkgs.jq
-        pkgs.netcat-gnu
-        nodejs
-      ];
+        newBuildInputs = buildInputs ++ [
+          haskellPackages.napalm-registry
+          pkgs.fswatch
+          pkgs.jq
+          pkgs.netcat-gnu
+          nodejs
+        ];
 
-      reformatPackageName = pname:
-        let
-          # regex adapted from `validate-npm-package-name`
-          # will produce 3 parts e.g.
-          # "@someorg/somepackage" -> [ "@someorg/" "someorg" "somepackage" ]
-          # "somepackage" -> [ null null "somepackage" ]
-          parts = builtins.tail (builtins.match "^(@([^/]+)/)?([^/]+)$" pname);
-          # if there is no organisation we need to filter out null values.
-          non-null = builtins.filter (x: x != null) parts;
-        in
+        reformatPackageName = pname:
+          let
+            # regex adapted from `validate-npm-package-name`
+            # will produce 3 parts e.g.
+            # "@someorg/somepackage" -> [ "@someorg/" "someorg" "somepackage" ]
+            # "somepackage" -> [ null null "somepackage" ]
+            parts = builtins.tail (builtins.match "^(@([^/]+)/)?([^/]+)$" pname);
+            # if there is no organisation we need to filter out null values.
+            non-null = builtins.filter (x: x != null) parts;
+          in
           builtins.concatStringsSep "-" non-null;
 
-      packageJSON = readPackageJSON root;
-      resolvedPname = attrs.pname or (packageJSON.name or fallbackPackageName);
-      resolvedVersion =
-        attrs.version or (packageJSON.version or fallbackPackageVersion);
+        packageJSON = readPackageJSON root;
+        resolvedPname = attrs.pname or (packageJSON.name or fallbackPackageName);
+        resolvedVersion = attrs.version or (packageJSON.version or fallbackPackageVersion);
 
-      # If name is not specified, read the package.json to load the
-      # package name and version from the source package.json
-      name =
-        attrs.name or "${reformatPackageName resolvedPname}-${resolvedVersion}";
+        # If name is not specified, read the package.json to load the
+        # package name and version from the source package.json
+        name = attrs.name or "${reformatPackageName resolvedPname}-${resolvedVersion}";
 
-      # Script that will be executed instead of npm.
-      # This approach allows adding custom behavior between
-      # every npm call, even if it is nested.
-      npmOverrideScript =
-        let
-          appendShebang = str:
-            ''
+        # Script that will be executed instead of npm.
+        # This approach allows adding custom behavior between
+        # every npm call, even if it is nested.
+        npmOverrideScript =
+          let
+            appendShebang = str: ''
               #!${pkgs.runtimeShell}
 
             '' + str;
 
-          preNpmHookScript =
-            pkgs.writeScript "preNpmHookScript" (appendShebang preNpmHook);
-          postNpmHookScript =
-            pkgs.writeScript "postNpmHookScript" (appendShebang postNpmHook);
+            preNpmHookScript =
+              pkgs.writeScript "preNpmHookScript" (appendShebang preNpmHook);
+            postNpmHookScript =
+              pkgs.writeScript "postNpmHookScript" (appendShebang postNpmHook);
 
-        in
+          in
           appendShebang ''
             # It is important to escape all $ if you want to
             # use local bash variables as this file will be
@@ -396,7 +386,7 @@ let
                 while read file; do patchShebangs \$file; done; fi
 
           '';
-    in
+      in
       pkgs.stdenv.mkDerivation (
         mkDerivationAttrs // {
           inherit name src;
@@ -411,60 +401,60 @@ let
           '';
 
           buildPhase = attrs.buildPhase or ''
-            runHook preBuild
+              runHook preBuild
 
-            # TODO: why does the unpacker not set the sourceRoot?
-            sourceRoot=$PWD
+              # TODO: why does the unpacker not set the sourceRoot?
+              sourceRoot=$PWD
 
-            ${pkgs.lib.optionalString patchPackages ''
-            echo "Patching npm packages integrity" 
-            ${pkgs.nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
-          ''}
+              ${lib.optionalString patchPackages ''
+              echo "Patching npm packages integrity"
+              ${pkgs.nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
+            ''}
 
-            echo "Starting napalm registry"
+              echo "Starting napalm registry"
 
-            napalm_REPORT_PORT_TO=$(mktemp -d)/port
+              napalm_REPORT_PORT_TO=$(mktemp -d)/port
 
-            napalm-registry --snapshot ${snapshot} --report-to "$napalm_REPORT_PORT_TO" &
-            napalm_REGISTRY_PID=$!
+              napalm-registry --snapshot ${snapshot} --report-to "$napalm_REPORT_PORT_TO" &
+              napalm_REGISTRY_PID=$!
 
-            while [ ! -f "$napalm_REPORT_PORT_TO" ]; do
-              echo waiting for registry to report port to "$napalm_REPORT_PORT_TO"
-              sleep 1
-            done
+              while [ ! -f "$napalm_REPORT_PORT_TO" ]; do
+                echo waiting for registry to report port to "$napalm_REPORT_PORT_TO"
+                sleep 1
+              done
 
-            napalm_PORT="$(cat "$napalm_REPORT_PORT_TO")"
-            rm "$napalm_REPORT_PORT_TO"
-            rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
+              napalm_PORT="$(cat "$napalm_REPORT_PORT_TO")"
+              rm "$napalm_REPORT_PORT_TO"
+              rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
 
-            echo "Configuring npm to use port $napalm_PORT"
+              echo "Configuring npm to use port $napalm_PORT"
 
-            ${nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
+              ${nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
 
-            export CPATH="${nodejs}/include/node:$CPATH"
+              export CPATH="${nodejs}/include/node:$CPATH"
 
-            echo "Overriding npm"
+              echo "Overriding npm"
 
-            # Create folder if it does not exists
-            mkdir -p npm-override-dir
+              # Create folder if it does not exists
+              mkdir -p npm-override-dir
 
-            cat > npm-override-dir/npm << EOF
-            ${npmOverrideScript}
-            EOF
+              cat > npm-override-dir/npm << EOF
+              ${npmOverrideScript}
+              EOF
 
-            chmod +x npm-override-dir/npm
+              chmod +x npm-override-dir/npm
 
-            # Makes custom npm script appear before real npm program
-            export PATH=$(pwd)/npm-override-dir:$PATH
+              # Makes custom npm script appear before real npm program
+              export PATH=$(pwd)/npm-override-dir:$PATH
 
-            echo "Installing npm package"
+              echo "Installing npm package"
 
-            ${parsedNpmCommands}
+              ${parsedNpmCommands}
 
-            echo "Shutting down napalm registry"
-            kill $napalm_REGISTRY_PID
+              echo "Shutting down napalm registry"
+              kill $napalm_REGISTRY_PID
 
-            runHook postBuild
+              runHook postBuild
           '';
 
           installPhase = attrs.installPhase or ''
@@ -519,13 +509,13 @@ let
         }
       );
 
-  napalm-registry-source = pkgs.lib.cleanSource ./napalm-registry;
+  napalm-registry-source = lib.cleanSource ./napalm-registry;
 
   haskellPackages = pkgs.haskellPackages.override {
     overrides = _: haskellPackages: {
       napalm-registry =
         haskellPackages.callCabal2nix "napalm-registry" napalm-registry-source
-          {};
+          { };
     };
   };
 
@@ -546,12 +536,12 @@ in
 
   napalm-registry = haskellPackages.napalm-registry;
 
-  hello-world = pkgs.runCommand "hello-world-test" {} ''
+  hello-world = pkgs.runCommand "hello-world-test" { } ''
     ${buildPackage ./test/hello-world {}}/bin/say-hello
     touch $out
   '';
 
-  hello-world-deps = pkgs.runCommand "hello-world-deps-test" {} ''
+  hello-world-deps = pkgs.runCommand "hello-world-deps-test" { } ''
     ${buildPackage ./test/hello-world-deps {}}/bin/say-hello
     touch $out
   '';
@@ -560,33 +550,33 @@ in
     let
       sources = import ./nix/sources.nix;
     in
-      pkgs.runCommand "netlify-cli-test" {} ''
-        export HOME=$(mktemp -d)
-        ${buildPackage sources.cli {}}/bin/netlify --help
-        touch $out
-      '';
+    pkgs.runCommand "netlify-cli-test" { } ''
+      export HOME=$(mktemp -d)
+      ${buildPackage sources.cli {}}/bin/netlify --help
+      touch $out
+    '';
 
   deckdeckgo-starter =
     let
       sources = import ./nix/sources.nix;
     in
-      buildPackage sources.deckdeckgo-starter {
-        name = "deckdeckgo-starter";
-        npmCommands = [ "npm install" "npm run build" ];
-        installPhase = ''
-          mv dist $out
-        '';
-        doInstallCheck = true;
-        installCheckPhase = ''
-          if [[ ! -f $out/index.html ]]
-          then
-            echo "Dist wasn't generated"
-            exit 1
-          else
-            echo "All good!"
-          fi
-        '';
-      };
+    buildPackage sources.deckdeckgo-starter {
+      name = "deckdeckgo-starter";
+      npmCommands = [ "npm install" "npm run build" ];
+      installPhase = ''
+        mv dist $out
+      '';
+      doInstallCheck = true;
+      installCheckPhase = ''
+        if [[ ! -f $out/index.html ]]
+        then
+          echo "Dist wasn't generated"
+          exit 1
+        else
+          echo "All good!"
+        fi
+      '';
+    };
 
   bitwarden-cli =
     let
@@ -604,9 +594,9 @@ in
         '';
       };
     in
-      pkgs.runCommand "bitwarden-cli" { buildInputs = [ bw ]; } ''
-        export HOME=$(mktemp -d)
-        bw --help
-        touch $out
-      '';
+    pkgs.runCommand "bitwarden-cli" { buildInputs = [ bw ]; } ''
+      export HOME=$(mktemp -d)
+      bw --help
+      touch $out
+    '';
 }

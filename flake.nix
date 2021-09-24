@@ -11,33 +11,35 @@
         };
       };
     in
-      flake-utils.lib.eachDefaultSystem (
-        system: let
+    flake-utils.lib.eachDefaultSystem
+      (
+        system:
+        let
           pkgs = import nixpkgs { inherit system; overlays = [ internal_overlay ]; };
         in
-          {
-            packages = {
-              inherit (pkgs.napalm)
-                hello-world hello-world-deps netlify-cli deckdeckgo-starter
-                bitwarden-cli napalm-registry
-                ;
-            };
+        {
+          packages = {
+            inherit (pkgs.napalm)
+              hello-world hello-world-deps netlify-cli deckdeckgo-starter
+              bitwarden-cli napalm-registry
+              ;
+          };
 
-            devShell = pkgs.napalm.napalm-registry-devshell;
-          }
+          devShell = pkgs.napalm.napalm-registry-devshell;
+        }
       ) // {
-        overlay = final: prev: builtins.removeAttrs (internal_overlay final prev) [
-          "hello-world"
-          "hello-world-deps"
-          "netlify-cli"
-          "deckdeckgo-starter"
-          "bitwarden-cli"
-          "napalm-registry"
-        ];
+      overlay = final: prev: builtins.removeAttrs (internal_overlay final prev) [
+        "hello-world"
+        "hello-world-deps"
+        "netlify-cli"
+        "deckdeckgo-starter"
+        "bitwarden-cli"
+        "napalm-registry"
+      ];
 
-        defaultTemplate = {
-          path = ./template;
-          description = "Template for using Napalm with flakes";
-        };
+      defaultTemplate = {
+        path = ./template;
+        description = "Template for using Napalm with flakes";
       };
+    };
 }

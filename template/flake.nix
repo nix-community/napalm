@@ -30,13 +30,13 @@
           ];
         });
 
-    in {
+    in
+    {
       # A Nixpkgs overlay.
-      overlay = final: prev:
-        {
-          # Example package
-          hello-world-deps = final.napalm.buildPackage ./hello-world-deps { };
-        };
+      overlay = final: prev: {
+        # Example package
+        hello-world-deps = final.napalm.buildPackage ./hello-world-deps { };
+      };
 
       # Provide your packages for selected system types.
       packages = forAllSystems (system: {
