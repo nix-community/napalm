@@ -408,7 +408,7 @@ let
 
               ${lib.optionalString patchPackages ''
               echo "Patching npm packages integrity"
-              ${pkgs.nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
+              ${nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
             ''}
 
               echo "Starting napalm registry"
