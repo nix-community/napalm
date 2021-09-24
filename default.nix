@@ -135,10 +135,9 @@ let
       topPackageName =
         packageLock.name or (ifNotNull pname fallbackPackageName);
 
-      updateTopPackageVersion = obj:
-        {
-          version = ifNotNull version fallbackPackageVersion;
-        } // obj;
+      updateTopPackageVersion = obj: {
+        version = ifNotNull version fallbackPackageVersion;
+      } // obj;
 
       # XXX: Creates a "node" for genericClosure. We include whether or not
       # the packages contains an integrity, and if so the integriy as well,
@@ -147,23 +146,14 @@ let
       mkNode = name: obj: {
         inherit name obj;
         inherit (obj) version;
-        key =
-          if builtins.hasAttr "integrity" obj then
-            "${name}-${obj.version}-${obj.integrity}"
-          else
-            "${name}-${obj.version}-no-integrity";
-        next =
-          if builtins.hasAttr "dependencies" obj then
-            lib.mapAttrsToList mkNode (obj.dependencies)
-          else
-            [ ];
+        key = "${name}-${obj.version}-${obj.integrity or "no-integrity"}";
+        next = lib.mapAttrsToList mkNode (obj.dependencies or { });
       };
 
       # The list of all packages discovered in the package-lock, excluding
       # the top-level package.
       flattened = builtins.genericClosure {
-        startSet =
-          [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
+        startSet = [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
         operator = x: x.next;
       };
 
@@ -180,22 +170,19 @@ let
               abort "Unknown sha for ${x.obj.integrity}";
         in
         if builtins.hasAttr "resolved" x.obj then {
-          ${x.name} = {
-            ${x.version} =
-              let
-                src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
-                out = mkNpmTar {
-                  inherit src buildInputs;
-                  pname = lib.strings.sanitizeDerivationName x.name;
-                  version = x.version;
-                  customAttrs =
-                    customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
-                };
-              in
-              if patchPackages then "${out}/package.tgz" else src;
-          };
-        } else
-          { };
+          ${x.name}.${x.version} =
+            let
+              src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
+              out = mkNpmTar {
+                inherit src buildInputs;
+                pname = lib.strings.sanitizeDerivationName x.name;
+                version = x.version;
+                customAttrs =
+                  customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
+              };
+            in
+            if patchPackages then "${out}/package.tgz" else src;
+        } else { };
 
       mergeSnapshotEntries = acc: x:
         lib.recursiveUpdate acc (snapshotEntry x);
@@ -401,60 +388,60 @@ let
           '';
 
           buildPhase = attrs.buildPhase or ''
-              runHook preBuild
+            runHook preBuild
 
-              # TODO: why does the unpacker not set the sourceRoot?
-              sourceRoot=$PWD
+            # TODO: why does the unpacker not set the sourceRoot?
+            sourceRoot=$PWD
 
-              ${lib.optionalString patchPackages ''
+            ${lib.optionalString patchPackages ''
               echo "Patching npm packages integrity"
               ${nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
             ''}
 
-              echo "Starting napalm registry"
+            echo "Starting napalm registry"
 
-              napalm_REPORT_PORT_TO=$(mktemp -d)/port
+            napalm_REPORT_PORT_TO=$(mktemp -d)/port
 
-              napalm-registry --snapshot ${snapshot} --report-to "$napalm_REPORT_PORT_TO" &
-              napalm_REGISTRY_PID=$!
+            napalm-registry --snapshot ${snapshot} --report-to "$napalm_REPORT_PORT_TO" &
+            napalm_REGISTRY_PID=$!
 
-              while [ ! -f "$napalm_REPORT_PORT_TO" ]; do
-                echo waiting for registry to report port to "$napalm_REPORT_PORT_TO"
-                sleep 1
-              done
+            while [ ! -f "$napalm_REPORT_PORT_TO" ]; do
+              echo waiting for registry to report port to "$napalm_REPORT_PORT_TO"
+              sleep 1
+            done
 
-              napalm_PORT="$(cat "$napalm_REPORT_PORT_TO")"
-              rm "$napalm_REPORT_PORT_TO"
-              rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
+            napalm_PORT="$(cat "$napalm_REPORT_PORT_TO")"
+            rm "$napalm_REPORT_PORT_TO"
+            rmdir "$(dirname "$napalm_REPORT_PORT_TO")"
 
-              echo "Configuring npm to use port $napalm_PORT"
+            echo "Configuring npm to use port $napalm_PORT"
 
-              ${nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
+            ${nodejs}/bin/npm config set registry "http://localhost:$napalm_PORT"
 
-              export CPATH="${nodejs}/include/node:$CPATH"
+            export CPATH="${nodejs}/include/node:$CPATH"
 
-              echo "Overriding npm"
+            echo "Overriding npm"
 
-              # Create folder if it does not exists
-              mkdir -p npm-override-dir
+            # Create folder if it does not exists
+            mkdir -p npm-override-dir
 
-              cat > npm-override-dir/npm << EOF
-              ${npmOverrideScript}
-              EOF
+            cat > npm-override-dir/npm << EOF
+            ${npmOverrideScript}
+            EOF
 
-              chmod +x npm-override-dir/npm
+            chmod +x npm-override-dir/npm
 
-              # Makes custom npm script appear before real npm program
-              export PATH=$(pwd)/npm-override-dir:$PATH
+            # Makes custom npm script appear before real npm program
+            export PATH=$(pwd)/npm-override-dir:$PATH
 
-              echo "Installing npm package"
+            echo "Installing npm package"
 
-              ${parsedNpmCommands}
+            ${parsedNpmCommands}
 
-              echo "Shutting down napalm registry"
-              kill $napalm_REGISTRY_PID
+            echo "Shutting down napalm registry"
+            kill $napalm_REGISTRY_PID
 
-              runHook postBuild
+            runHook postBuild
           '';
 
           installPhase = attrs.installPhase or ''
@@ -513,9 +500,7 @@ let
 
   haskellPackages = pkgs.haskellPackages.override {
     overrides = _: haskellPackages: {
-      napalm-registry =
-        haskellPackages.callCabal2nix "napalm-registry" napalm-registry-source
-          { };
+      napalm-registry = haskellPackages.callCabal2nix "napalm-registry" napalm-registry-source { };
     };
   };
 
