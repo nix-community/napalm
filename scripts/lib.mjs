@@ -8,11 +8,11 @@ const loadAllPackageLocks = (root) =>
 				const fileName = `${root}/${file.name}`;
 				const locks = await locksP;
 
-				return file.isDirectory() ?
-					[...locks, ...(await loadAllPackageLocks(fileName))]
-					: (file.name === "package-lock.json") ?
-						[...locks, fileName] :
-						locks;
+				return file.isDirectory()
+					? [...locks, ...(await loadAllPackageLocks(fileName))]
+					: (file.name === "package-lock.json")
+						? [...locks, fileName]
+						: locks;
 			}, Promise.resolve([])));
 
 const loadJSONFile = (file) => fsPromises.readFile(file, { encoding: 'utf8' }).then(JSON.parse);
