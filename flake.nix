@@ -1,21 +1,45 @@
 {
   description = "Build NPM packages in Nix and lightweight NPM registry";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.flake-utils.url = "github:numtide/flake-utils";
 
-  outputs = { self, nixpkgs }: let
-    systems = [ "i686-linux" "x86_64-linux" "aarch64-linux" "x86_64-darwin" ];
-  in {
-    overlay = final: prev: {
-      napalm = {
-        inherit (import ./. { pkgs = final; })
-          buildPackage snapshotFromPackageLockJson;
+  outputs = { self, nixpkgs, flake-utils }:
+    let
+      internal_overlay = final: prev: {
+        napalm = import ./. {
+          pkgs = final;
+        };
+      };
+    in
+    flake-utils.lib.eachDefaultSystem
+      (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; overlays = [ internal_overlay ]; };
+        in
+        {
+          packages = {
+            inherit (pkgs.napalm)
+              hello-world hello-world-deps netlify-cli deckdeckgo-starter
+              bitwarden-cli napalm-registry
+              ;
+          };
+
+          devShell = pkgs.napalm.napalm-registry-devshell;
+        }
+      ) // {
+      overlay = final: prev: builtins.removeAttrs (internal_overlay final prev) [
+        "hello-world"
+        "hello-world-deps"
+        "netlify-cli"
+        "deckdeckgo-starter"
+        "bitwarden-cli"
+        "napalm-registry"
+      ];
+
+      defaultTemplate = {
+        path = ./template;
+        description = "Template for using Napalm with flakes";
       };
     };
-
-    checks = nixpkgs.lib.genAttrs systems (system: let
-      pkgs = nixpkgs.legacyPackages.${system};
-    in removeAttrs (import ./. { inherit pkgs; }) [
-      "buildPackage" "napalm-registry" "napalm-registry-devshell"
-      "snapshotFromPackageLockJson"
-    ]);
-  };
 }
