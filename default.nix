@@ -396,7 +396,7 @@ let
             ${lib.optionalString patchPackages ''
               echo "Patching npm packages integrity"
               ${if
-                # If version of the node is belowe 14.13.0 there is no ESM
+                # If version of the node.js is below 14.13.0 there is no ESM
                 # module support by node.js
                 builtins.compareVersions nodejs.version "14.13.0" > 0
                 then nodejs else pkgs.nodejs
