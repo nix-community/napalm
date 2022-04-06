@@ -4,6 +4,7 @@ jobs:
   build-nix:
 
     machine:
+        image: ubuntu-2004:current
         enabled: true
 
     steps:
