@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -25,6 +26,9 @@ import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Compression.GZip as GZip
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.Aeson as Aeson
+#if MIN_VERSION_aeson(2, 0, 0)
+import qualified Data.Aeson.KeyMap as Aeson.KeyMap
+#endif
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Base16 as Base16
@@ -318,9 +322,16 @@ mkPackageVersionMetadata config port pn pv tarPath = do
 
     packageJson <- readPackageJson tarPath
 
+    let
+#if MIN_VERSION_aeson(2, 0, 0)
+      keyMapSingleton = Aeson.KeyMap.singleton
+#else
+      keyMapSingleton = HMS.singleton
+#endif
+
     pure $ PackageVersionMetadata $
       Aeson.Object $
-      HMS.singleton "dist" dist <> packageJson
+      keyMapSingleton "dist" dist <> packageJson
 
 mkTarballURL :: Config -> Warp.Port -> ScopedPackageName -> TarballName -> T.Text
 mkTarballURL
