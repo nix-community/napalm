@@ -28,7 +28,7 @@ jobs:
       - run:
           name: Install Nix
           command: |
-            until bash <(curl https://nixos.org/nix/install)
+            until bash <(curl -L https://nixos.org/nix/install)
             do
               echo "Nix install failed, retrying"
               sudo rm -rf /nix
