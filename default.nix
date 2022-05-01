@@ -500,7 +500,7 @@ let
 
   haskellPackages = pkgs.haskellPackages.override {
     overrides = _: haskellPackages: {
-      napalm-registry = haskellPackages.callCabal2nix "napalm-registry" napalm-registry-source { };
+      napalm-registry = haskellPackages.callPackage napalm-registry-source { };
     };
   };
 
