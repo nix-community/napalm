@@ -19,12 +19,12 @@ import { loadJSONFile, loadAllPackageLocks, getHashOf } from "./lib.mjs"
 const updateDependencies = async (snapshot, dependencies) => Object.fromEntries(
 	await Promise.all(Object.entries(dependencies).map(async ([packageName, pkg]) => {
 		try {
-			const hashType = pkg.integrity.split("-")[0];
+			const hashType = pkg.integrity ? pkg.integrity.split("-")[0] : undefined;
 			return [
 				packageName,
 				{
 					...pkg,
-					integrity: await getHashOf(hashType, snapshot[packageName][pkg.version]),
+					integrity: hashType ? await getHashOf(hashType, snapshot[packageName][pkg.version]) : undefined,
 					dependencies: pkg.dependencies ? await updateDependencies(snapshot, pkg.dependencies) : undefined
 				}
 			]
