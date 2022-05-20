@@ -154,6 +154,8 @@ napalm.buildPackage ./. {
 }
 ```
 
+This will force repacking of all dependencies, though, so you might want to patch only specific dependencies by passing an empty attribute set to the next method.
+
 ### Customizing patching mechanism of npm packages
 
 Sometimes it is required to manually patch some package.
