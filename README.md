@@ -165,18 +165,23 @@ This attribute is a set of that overrides for packages that will be patched.
 ```nix
 { napalm, ... }:
 napalm.buildPackage ./. {
-	# Version is not required. When it is not specified it
-	# applies override to all packages with that name.
-	#
-	# Arguemnts that are passed into custom patch:
+	# Arguments that are passed to the overrider:
 	# `pkgs` - Nixpkgs used by Napalm
 	# `prev` - Current set that will be passed to mkDerivation
-	customPatchPackages."react-native"."0.65.0" = pkgs: prev: {
-		EXAMPLE_ENV_VAR = "XYZ";
-		dontBuild = false;
-		buildPhase = ''
-		# You can copy some stuff here or run some custom stuff
-		'';
+	customPatchPackages = {
+		"react-native" = {
+			"0.65.0" = pkgs: prev: {
+				EXAMPLE_ENV_VAR = "XYZ";
+				dontBuild = false;
+				buildPhase = ''
+				# You can copy some stuff here or run some custom stuff
+				'';
+			};
+		};
+
+		# Version is not required. When it is not specified it
+		# applies override to all packages with that name.
+		"node-gyp-builder" = pkgs: prev: { };
 	};
 }
 ```
