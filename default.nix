@@ -140,7 +140,7 @@ let
       } // obj;
 
       # XXX: Creates a "node" for genericClosure. We include whether or not
-      # the packages contains an integrity, and if so the integriy as well,
+      # the packages contains an integrity, and if so the integrity as well,
       # in the key. The reason is that the same package and version pair can
       # be found several time in a package-lock.json.
       mkNode = name: obj: {
@@ -339,49 +339,28 @@ let
         # Script that will be executed instead of npm.
         # This approach allows adding custom behavior between
         # every npm call, even if it is nested.
-        npmOverrideScript =
-          let
-            appendShebang = str: ''
-              #!${pkgs.runtimeShell}
+        npmOverrideScript = pkgs.writeShellScriptBin "npm" ''
+          echo "npm overridden successfully."
 
-            '' + str;
+          echo "Loading stdenv setup ..."
+          source "${pkgs.stdenv}/setup"
 
-            preNpmHookScript =
-              pkgs.writeScript "preNpmHookScript" (appendShebang preNpmHook);
-            postNpmHookScript =
-              pkgs.writeScript "postNpmHookScript" (appendShebang postNpmHook);
+          set -e
 
-          in
-          appendShebang ''
-            # It is important to escape all $ if you want to
-            # use local bash variables as this file will be
-            # flushed through another bash script.
-            # This way it is possible to use
-            # `source $stdenv/setup` as `$stdenv` is being resolved
-            # while being written to the file
+          echo "Running preNpmHook"
+          ${preNpmHook}
 
-            echo "Npm overrided sucesfully"
+          echo "Running npm $@"
 
-            echo "Loading stdenv setup ..."
-            source $stdenv/setup
+          ${nodejs}/bin/npm "$@"
 
-            set -e
+          echo "Running postNpmHook"
+          ${postNpmHook}
 
-            echo "Running preNpmHook"
-            bash ${preNpmHookScript}
-
-            echo "Running npm \$@"
-
-            ${nodejs}/bin/npm \$@
-
-            echo "Runing postNpmHook"
-            bash ${postNpmHookScript}
-
-            echo "Overzealously patching shebangs"
-            if [ -d node_modules ]; then find node_modules -type d -name bin | \
-                while read file; do patchShebangs \$file; done; fi
-
-          '';
+          echo "Overzealously patching shebangs"
+          if [[ -d node_modules ]]; then find node_modules -type d -name bin | \
+              while read file; do patchShebangs "$file"; done; fi
+        '';
       in
       pkgs.stdenv.mkDerivation (
         mkDerivationAttrs // {
@@ -429,19 +408,8 @@ let
 
             export CPATH="${nodejs}/include/node:$CPATH"
 
-            echo "Overriding npm"
-
-            # Create folder if it does not exists
-            mkdir -p npm-override-dir
-
-            cat > npm-override-dir/npm << EOF
-            ${npmOverrideScript}
-            EOF
-
-            chmod +x npm-override-dir/npm
-
             # Makes custom npm script appear before real npm program
-            export PATH=$(pwd)/npm-override-dir:$PATH
+            export PATH="${npmOverrideScript}/bin:$PATH"
 
             echo "Installing npm package"
 
