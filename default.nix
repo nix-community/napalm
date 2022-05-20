@@ -178,7 +178,14 @@ let
                 pname = lib.strings.sanitizeDerivationName x.name;
                 version = x.version;
                 customAttrs =
-                  customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
+                  let
+                    customAttrsOverrider =
+                      customPatchPackages.${x.name}.${x.version}
+                      or (customPatchPackages.${x.name} or null);
+                  in
+                  if builtins.isFunction customAttrsOverrider
+                  then customAttrsOverrider
+                  else null;
               };
             in
             if patchPackages then "${out}/package.tgz" else src;
