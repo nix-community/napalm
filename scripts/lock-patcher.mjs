@@ -15,16 +15,16 @@ import fsPromises from "fs/promises"
 import { loadJSONFile, loadAllPackageLocks, getHashOf } from "./lib.mjs"
 
 // Returns new set, that is modified dependencies argument
-// with proper integirty hashes
+// with proper integrity hashes
 const updateDependencies = async (snapshot, dependencies) => Object.fromEntries(
 	await Promise.all(Object.entries(dependencies).map(async ([packageName, pkg]) => {
 		try {
-			const hashType = pkg.integrity.split("-")[0];
+			const hashType = pkg.integrity ? pkg.integrity.split("-")[0] : undefined;
 			return [
 				packageName,
 				{
 					...pkg,
-					integrity: await getHashOf(hashType, snapshot[packageName][pkg.version]),
+					integrity: hashType ? await getHashOf(hashType, snapshot[packageName][pkg.version]) : undefined,
 					dependencies: pkg.dependencies ? await updateDependencies(snapshot, pkg.dependencies) : undefined
 				}
 			]
@@ -33,6 +33,30 @@ const updateDependencies = async (snapshot, dependencies) => Object.fromEntries(
 			console.error(`[lock-patcher] At: ${packageName}-${pkg.version} (${JSON.stringify(snapshot[packageName])})`);
 			console.error(err);
 			return [packageName, pkg];
+		}
+	}))
+);
+
+// Returns new set, that is modified packages argument
+// with proper integrity hashes
+const packageNameRegex = /node_modules\/(?<name>(?:@[^/]+\/)?[^/]+)$/;
+const updatePackages = async (snapshot, packages) => Object.fromEntries(
+	await Promise.all(Object.entries(packages).map(async ([packagePath, pkg]) => {
+		const packageName = packagePath.match(packageNameRegex)?.groups.name;
+		try {
+			const hashType = pkg.integrity ? pkg.integrity.split("-")[0] : undefined;
+			return [
+				packagePath,
+				{
+					...pkg,
+					integrity: hashType ? await getHashOf(hashType, snapshot[packageName][pkg.version]) : undefined,
+				}
+			]
+		}
+		catch (err) {
+			console.error(`[lock-patcher] At: ${packageName}-${pkg.version} (${JSON.stringify(snapshot[packageName])})`);
+			console.error(err);
+			return [packagePath, pkg];
 		}
 	}))
 );
@@ -68,7 +92,10 @@ const updateDependencies = async (snapshot, dependencies) => Object.fromEntries(
 	const promises = packageLocks.map(async (lock) => {
 		const set = {
 			...lock.parsed,
-			dependencies: await updateDependencies(snapshot, lock.parsed.dependencies)
+			// lockfileVersion ≤ 2
+			dependencies: lock.parsed.dependencies ? await updateDependencies(snapshot, lock.parsed.dependencies) : undefined,
+			// lockfileVersion ≥ 2
+			packages: lock.parsed.packages ? await updatePackages(snapshot, lock.parsed.packages) : undefined,
 		};
 
 		return await fsPromises.writeFile(lock.path, JSON.stringify(set), { encoding: 'utf8', flag: 'w' });

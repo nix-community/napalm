@@ -172,16 +172,24 @@ let
         if builtins.hasAttr "resolved" x.obj then {
           ${x.name}.${x.version} =
             let
+              customAttrs =
+                let
+                  customAttrsOverrider =
+                    customPatchPackages.${x.name}.${x.version}
+                    or (customPatchPackages.${x.name} or null);
+                in
+                if builtins.isFunction customAttrsOverrider
+                then customAttrsOverrider
+                else null;
               src = pkgs.fetchurl ({ url = x.obj.resolved; } // sha);
               out = mkNpmTar {
                 inherit src buildInputs;
                 pname = lib.strings.sanitizeDerivationName x.name;
                 version = x.version;
-                customAttrs =
-                  customPatchPackages.${x.name}.${x.version} or (customPatchPackages.${x.name} or null);
+                inherit customAttrs;
               };
             in
-            if patchPackages then "${out}/package.tgz" else src;
+            if patchPackages || customAttrs != null then "${out}/package.tgz" else src;
         } else { };
 
       mergeSnapshotEntries = acc: x:
@@ -228,13 +236,14 @@ let
       # --nodedir argument helps with building node-gyp based packages.
     , buildInputs ? [ ]
     , installPhase ? null
-    , patchPackages ? customPatchPackages
-        != { } # Patches shebangs and elfs in all npm dependencies, may result in slowing down building process
-      # if you are having `missing interpreter: /usr/bin/env` issue you should enable this option
-    , customPatchPackages ? { } # This argument is a set that has structure like: { "<Package Name>" = <override>; ... } or
+    # Patches shebangs and ELFs in all npm dependencies, may result in slowing down building process
+    # if you are having `missing interpreter: /usr/bin/env` issue you should enable this option
+    , patchPackages ? false
+      # This argument is a set that has structure like: { "<Package Name>" = <override>; ... } or
       # { "<Package name>"."<Package version>" = <override>; ... }, where <override> is a function that takes two arguments:
       # `pkgs` (nixpkgs) and `prev` (default derivation arguments of the package) and returns new arguments that will override
       # current mkDerivation arguments. This works similarly to the overrideAttrs method. See README.md
+    , customPatchPackages ? { }
     , preNpmHook ? "" # Bash script to be called before npm call
     , postNpmHook ? "" # Bash script to be called after npm call
     , ...
@@ -393,7 +402,7 @@ let
             # TODO: why does the unpacker not set the sourceRoot?
             sourceRoot=$PWD
 
-            ${lib.optionalString patchPackages ''
+            ${lib.optionalString (patchPackages || customPatchPackages != { }) ''
               echo "Patching npm packages integrity"
               ${nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
             ''}
