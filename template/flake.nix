@@ -35,18 +35,18 @@
       # A Nixpkgs overlay.
       overlay = final: prev: {
         # Example package
-        hello-world-deps = final.napalm.buildPackage ./hello-world-deps { };
+        hello-world = final.napalm.buildPackage ./hello-world { };
       };
 
       # Provide your packages for selected system types.
       packages = forAllSystems (system: {
-        inherit (nixpkgsFor.${system}) hello-world-deps;
+        inherit (nixpkgsFor.${system}) hello-world;
       });
 
       # The default package for 'nix build'. This makes sense if the
       # flake provides only one package or there is a clear "main"
       # package.
       defaultPackage =
-        forAllSystems (system: self.packages.${system}.hello-world-deps);
+        forAllSystems (system: self.packages.${system}.hello-world);
     };
 }
