@@ -9,44 +9,21 @@
 
   outputs = { self, nixpkgs, napalm }:
     let
-      # Generate a user-friendly version number.
-      version = builtins.substring 0 8 self.lastModifiedDate;
-
       # System types to support.
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "i686-linux" "x86_64-darwin" "aarch64-darwin" ];
 
       # Helper function to generate an attrset '{ x86_64-linux = f "x86_64-linux"; ... }'.
-      forAllSystems = f:
-        nixpkgs.lib.genAttrs supportedSystems (system: f system);
-
-      # Nixpkgs instantiated for supported system types.
-      nixpkgsFor = forAllSystems (system:
-        import nixpkgs {
-          inherit system;
-          # Add napalm to you overlay's list
-          overlays = [
-            self.overlay
-            napalm.overlay
-          ];
-        });
-
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      # A Nixpkgs overlay.
-      overlay = final: prev: {
-        # Example package
-        hello-world = final.napalm.buildPackage ./hello-world { };
-      };
-
       # Provide your packages for selected system types.
       packages = forAllSystems (system: {
-        inherit (nixpkgsFor.${system}) hello-world;
-      });
+        hello-world = napalm.legacyPackages."${system}".buildPackage ./hello-world { };
 
-      # The default package for 'nix build'. This makes sense if the
-      # flake provides only one package or there is a clear "main"
-      # package.
-      defaultPackage =
-        forAllSystems (system: self.packages.${system}.hello-world);
+        # The default package for 'nix build'. This makes sense if the
+        # flake provides only one package or there is a clear "main"
+        # package.
+        default = self.packages."${system}".hello-world;
+      });
     };
 }
