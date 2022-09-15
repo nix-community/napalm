@@ -4,45 +4,40 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs = { self, nixpkgs, flake-utils }:
-    let
-      internal_overlay = final: prev: {
-        napalm = import ./. {
-          pkgs = final;
-        };
-      };
-    in
     flake-utils.lib.eachDefaultSystem
-      (
-        system:
+      (system:
         let
-          pkgs = import nixpkgs { inherit system; overlays = [ internal_overlay ]; };
+          napalm = import ./. {
+            pkgs = nixpkgs.legacyPackages."${system}";
+          };
         in
         {
           legacyPackages = {
-            inherit (pkgs.napalm)
+            inherit (napalm)
               buildPackage
               snapshotFromPackageLockJson
               ;
           };
 
           packages = {
-            inherit (pkgs.napalm)
-              hello-world hello-world-deps netlify-cli deckdeckgo-starter
-              bitwarden-cli napalm-registry
+            inherit (napalm)
+              hello-world
+              hello-world-deps
+              netlify-cli
+              deckdeckgo-starter
+              bitwarden-cli
+              napalm-registry
               ;
           };
 
-          devShell = pkgs.napalm.napalm-registry-devshell;
+          devShell = napalm.napalm-registry-devshell;
         }
       ) // {
-      overlay = final: prev: builtins.removeAttrs (internal_overlay final prev) [
-        "hello-world"
-        "hello-world-deps"
-        "netlify-cli"
-        "deckdeckgo-starter"
-        "bitwarden-cli"
-        "napalm-registry"
-      ];
+      overlay = final: prev: {
+        napalm = import ./. {
+          pkgs = final;
+        };
+      };
 
       defaultTemplate = {
         path = ./template;
