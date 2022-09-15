@@ -52,6 +52,31 @@ in napalm.buildPackage ./. { packageLock = <path/to/package-lock>; }
 
 If you want to use Napalm in your flake project, you can do that by adding it to your inputs and passing `napalm.overlay` to your Nixpkgs instance. There is also a template, that can help you use napalm in your project. You can use it by running `nix flake init -t "github:nix-community/napalm"`.
 
+#### Example `flake.nix`
+
+```nix
+{
+  inputs.url.nixpkgs = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.url.napalm = "github:nix-community/napalm";
+
+  # NOTE: This is optional, but is how to configure napalm's env
+  inputs.url.napalm.inputs.nixpkgs.follows = "nixpkgs"
+  
+  outputs = { self, nixpkgs, napalm }: 
+  let
+    system = "linux-x86_64";
+    pkgs = nixpkgs.legacyPackages."${system}";
+  in {
+    # Assuming the flake is in the same directory as package-lock.json
+    packages."${system}".package-name = napalm.legacyPackages."${system}".buildPackage ./. { };
+
+    devShells."${system}".shell-name = pkgs.mkShell {
+      nativeBuildInputs = with pkgs; [ nodejs ];
+    };
+  };
+}
+```
+
 ## Handling complicated scenarios with Napalm
 
 Examples below assume that you have imported `napalm` in some way.
