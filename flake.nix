@@ -18,6 +18,13 @@
           pkgs = import nixpkgs { inherit system; overlays = [ internal_overlay ]; };
         in
         {
+          legacyPackages = {
+            inherit (pkgs.napalm)
+              buildPackage
+              snapshotFromPackageLockJson
+              ;
+          };
+
           packages = {
             inherit (pkgs.napalm)
               hello-world hello-world-deps netlify-cli deckdeckgo-starter
