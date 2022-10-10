@@ -143,12 +143,25 @@ let
       # the packages contains an integrity, and if so the integrity as well,
       # in the key. The reason is that the same package and version pair can
       # be found several time in a package-lock.json.
-      mkNode = name: obj: {
-        inherit name obj;
-        inherit (obj) version;
-        key = "${name}-${obj.version}-${obj.integrity or "no-integrity"}";
-        next = lib.mapAttrsToList mkNode (obj.dependencies or { });
-      };
+      mkNode =
+        originalName:
+        originalObj:
+        let
+          # Version can be a pointer like “npm:vue-loader@15.10.0”.
+          # In that case we need to replace the name and version with the target one.
+          isPointer = lib.hasPrefix "npm:" originalObj.version;
+          fragments = lib.splitString "@" (lib.removePrefix "npm:" originalObj.version);
+          name = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else originalName;
+          version = if isPointer then lib.last fragments else originalObj.version;
+          obj = originalObj // {
+            inherit name version;
+          };
+        in
+        {
+          inherit name obj version;
+          key = "${name}-${obj.version}-${obj.integrity or "no-integrity"}";
+          next = lib.mapAttrsToList mkNode (obj.dependencies or { });
+        };
 
       # The list of all packages discovered in the package-lock, excluding
       # the top-level package.
