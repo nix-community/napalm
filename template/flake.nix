@@ -19,13 +19,16 @@
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      # A Nixpkgs overlay.
+      # Advanced: A Nixpkgs overlay.
       overlay = final: prev:
         let
-          napalmPkg = napalm.legacyPackages."${final.stdenv.hostPlatform.system}";
+          # To keep the overlay pure, conditionally use the napalm overlay and
+          #   default to using the napalm package from the overlaid nixpkgs if
+          #   it exists.
+          pkgsWithNapalm = if prev ? napalm.buildPackage then prev else napalm.overlay final prev;
         in
         {
-          hello-world = napalmPkg.buildPackage ./hello-world { };
+          hello-world = pkgsWithNapalm.napalm.buildPackage ./hello-world { };
         };
 
       # Provide your packages for selected system types.
@@ -34,8 +37,8 @@
       });
 
       # The default package for 'nix build'. This makes sense if the
-      # flake provides only one package or there is a clear "main"
-      # package.
+      #   flake provides only one package or there is a clear "main"
+      #   package.
       defaultPackage =
         forAllSystems (system: self.packages."${system}".hello-world);
     };
