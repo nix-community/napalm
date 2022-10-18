@@ -4,7 +4,7 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem
+    (flake-utils.lib.eachDefaultSystem
       (system:
         let
           napalm = import ./. {
@@ -30,18 +30,25 @@
               ;
           };
 
-          devShell = napalm.napalm-registry-devshell;
+          devShells = {
+            default = napalm.napalm-registry-devshell;
+          };
         }
-      ) // {
-      overlay = final: prev: {
-        napalm = import ./. {
-          pkgs = final;
+      )
+    ) // {
+      overlays = {
+        default = final: prev: {
+          napalm = import ./. {
+            pkgs = final;
+          };
         };
       };
 
-      defaultTemplate = {
-        path = ./template;
-        description = "Template for using Napalm with flakes";
+      templates = {
+        default = {
+          path = ./template;
+          description = "Template for using Napalm with flakes";
+        };
       };
     };
 }
