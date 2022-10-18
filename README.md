@@ -56,15 +56,15 @@ If you want to use Napalm in your flake project, you can do that by adding it to
 
 ```nix
 {
-  inputs.url.nixpkgs = "github:NixOS/nixpkgs/nixpkgs-unstable";
-  inputs.url.napalm = "github:nix-community/napalm";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.napalm.url = "github:nix-community/napalm";
 
   # NOTE: This is optional, but is how to configure napalm's env
-  inputs.url.napalm.inputs.nixpkgs.follows = "nixpkgs"
-  
+  inputs.napalm.inputs.nixpkgs.follows = "nixpkgs";
+
   outputs = { self, nixpkgs, napalm }: 
   let
-    system = "linux-x86_64";
+    system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages."${system}";
   in {
     # Assuming the flake is in the same directory as package-lock.json
