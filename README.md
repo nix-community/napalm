@@ -50,7 +50,7 @@ in napalm.buildPackage ./. { packageLock = <path/to/package-lock>; }
 
 ### Napalm with Nix flakes
 
-If you want to use Napalm in your flake project, you can do that by adding it to your inputs and either passing `napalm.overlay` to your Nixpkgs instance, or by using the `napalm.legacyPackages` `buildPackage` output. To configure the latter's environment, be sure to look at [the complicated scenarios](#handling-complicated-scenarios-with-napalm) and potentially set the `nixpkgs` input of napalm with `follows`.
+If you want to use Napalm in your flake project, you can do that by adding it to your inputs and either passing `napalm.overlays.default` to your Nixpkgs instance, or by using the `napalm.legacyPackages` `buildPackage` output. To configure the latter's environment, be sure to look at [the complicated scenarios](#handling-complicated-scenarios-with-napalm) and potentially set the `nixpkgs` input of napalm with `follows`.
 
 #### Example `flake.nix`
 

@@ -25,28 +25,29 @@
           inherit system;
           # Add napalm to you overlay's list
           overlays = [
-            self.overlay
-            napalm.overlay
+            self.overlays.default
+            napalm.overlays.default
           ];
         });
 
     in
     {
       # A Nixpkgs overlay.
-      overlay = final: prev: {
-        # Example package
-        hello-world = final.napalm.buildPackage ./hello-world { };
+      overlays = {
+        default = final: prev: {
+          # Example package
+          hello-world = final.napalm.buildPackage ./hello-world { };
+        };
       };
 
       # Provide your packages for selected system types.
       packages = forAllSystems (system: {
         inherit (nixpkgsFor.${system}) hello-world;
-      });
 
-      # The default package for 'nix build'. This makes sense if the
-      # flake provides only one package or there is a clear "main"
-      # package.
-      defaultPackage =
-        forAllSystems (system: self.packages.${system}.hello-world);
+        # The default package for 'nix build'. This makes sense if the
+        # flake provides only one package or there is a clear "main"
+        # package.
+        default = self.packages.${system}.hello-world;
+      });
     };
 }
