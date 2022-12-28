@@ -243,7 +243,7 @@ type API =
   Capture "package_name" PackageName :> Get '[JSON] PackageMetadata
 
 newtype PackageTag = PackageTag { _unPackageTag :: T.Text }
-  deriving newtype ( Aeson.ToJSONKey, IsString, Hashable )
+  deriving newtype ( Aeson.ToJSONKey, Eq, IsString, Hashable )
 newtype PackageVersion = PackageVersion { unPackageVersion :: T.Text }
   deriving newtype ( Eq, Ord, Hashable, FromHttpApiData, Aeson.ToJSONKey, Aeson.FromJSONKey, Aeson.ToJSON )
 data ScopedPackageName = ScopedPackageName { _spnScope :: Maybe ScopeName, spnName :: PackageName }
