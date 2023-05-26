@@ -69,7 +69,7 @@ main = do
         (port,sock) <- Warp.openFreePort
         putStrLn ("Warp picked port " <> show port <> ", reporting to " <> reportTo)
         writeFile reportTo (show port)
-        let settings = Warp.defaultSettings & Warp.setPort port
+        let settings = Warp.defaultSettings & Warp.setHost "*" & Warp.setPort port
         Warp.runSettingsSocket settings sock (Servant.serve api (server config port snapshot))
 
 parseConfig :: Opts.Parser Config
