@@ -23,6 +23,7 @@
             inherit (napalm)
               hello-world
               hello-world-deps
+              hello-world-deps-v3
               netlify-cli
               deckdeckgo-starter
               bitwarden-cli

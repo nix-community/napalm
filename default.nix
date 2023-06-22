@@ -521,6 +521,11 @@ in
     touch $out
   '';
 
+  hello-world-deps-v3 = pkgs.runCommand "hello-world-deps-v3-test" { } ''
+    ${buildPackage ./test/hello-world-deps-v3 {}}/bin/say-hello
+    touch $out
+  '';
+
   netlify-cli =
     let
       sources = import ./nix/sources.nix;
