@@ -130,6 +130,8 @@ let
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
+      lockfileVersion = packageLock.lockfileVersion or 1;
+
       # Load custom name and version of the program in case it was specified and
       # not specified by the package-lock.json
       topPackageName =
@@ -139,6 +141,16 @@ let
         version = ifNotNull version fallbackPackageVersion;
       } // obj;
 
+      parsePackageNameVersion = name': version': let
+        # Version can be a pointer like “npm:vue-loader@15.10.0”.
+        # In that case we need to replace the name and version with the target one.
+        isPointer = lib.hasPrefix "npm:" version';
+        fragments = lib.splitString "@" (lib.removePrefix "npm:" version');
+        name = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else name';
+        version = if isPointer then lib.last fragments else version';
+      in
+      { inherit name version; };
+
       # XXX: Creates a "node" for genericClosure. We include whether or not
       # the packages contains an integrity, and if so the integrity as well,
       # in the key. The reason is that the same package and version pair can
@@ -147,12 +159,7 @@ let
         originalName:
         originalObj:
         let
-          # Version can be a pointer like “npm:vue-loader@15.10.0”.
-          # In that case we need to replace the name and version with the target one.
-          isPointer = lib.hasPrefix "npm:" originalObj.version;
-          fragments = lib.splitString "@" (lib.removePrefix "npm:" originalObj.version);
-          name = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else originalName;
-          version = if isPointer then lib.last fragments else originalObj.version;
+          inherit (parsePackageNameVersion originalName originalObj.version) name version;
           obj = originalObj // {
             inherit name version;
           };
@@ -165,10 +172,35 @@ let
 
       # The list of all packages discovered in the package-lock, excluding
       # the top-level package.
-      flattened = builtins.genericClosure {
-        startSet = [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
-        operator = x: x.next;
-      };
+      flattened = if lockfileVersion < 3
+        then builtins.genericClosure {
+          startSet = [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
+          operator = x: x.next;
+        }
+        else let
+          # Parse a path like "node_modules/underscore" into a package name, like "underscore".
+          # Also has to support scoped package paths, like "node_modules/@babel/helper-string-parser" and
+          # nested packages, like "node_modules/@babel/helper-string-parser/node_modules/underscore".
+          pathToName = name: lib.pipe name [
+            (builtins.split "(@[^/]+/)?([^/]+)$")
+            (builtins.filter (x: builtins.isList x))
+            lib.flatten
+            (builtins.filter (x: x != null))
+            lib.concatStrings
+          ];
+        in lib.pipe (packageLock.packages or {}) [
+          # filter out the top-level package, which has an empty name
+          (lib.filterAttrs (name: _: name != ""))
+          (lib.mapAttrsToList (originalName: originalObj: let
+            inherit (parsePackageNameVersion (pathToName originalName) originalObj.version) name version;
+            obj = originalObj // {
+              inherit name version;
+            };
+          in {
+            inherit name obj version;
+            key = "${name}-${obj.version}-${obj.integrity or "no-integrity"}";
+          }))
+        ];
 
       # Create an entry for the snapshot, e.g.
       #     { some-package = { some-version = { url = ...; shaX = ...} ; }; }

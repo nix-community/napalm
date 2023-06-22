@@ -11,8 +11,8 @@
     "say-hello": "./cli.js"
   },
   "dependencies": {
+    "@babel/helper-string-parser": "^7.22.5",
     "underscore": "^1.9.1"
   },
-  "devDependencies": {},
   "description": ""
 }
