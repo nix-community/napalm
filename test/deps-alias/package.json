@@ -1,0 +1,16 @@
+{
+  "name": "deps-alias",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "bin": {
+    "say-hello": "./cli.js"
+  },
+  "dependencies": {
+    "@isaacs/cliui": "8.0.2"
+  }
+}

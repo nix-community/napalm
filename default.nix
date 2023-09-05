@@ -141,15 +141,20 @@ let
         version = ifNotNull version fallbackPackageVersion;
       } // obj;
 
-      parsePackageNameVersion = name': version': let
-        # Version can be a pointer like “npm:vue-loader@15.10.0”.
-        # In that case we need to replace the name and version with the target one.
-        isPointer = lib.hasPrefix "npm:" version';
-        fragments = lib.splitString "@" (lib.removePrefix "npm:" version');
-        name = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else name';
-        version = if isPointer then lib.last fragments else version';
+      # Version can be a pointer like “npm:vue-loader@15.10.0”.
+      # In that case we need to replace the name and version with the target one.
+      parsePointer = { name, version }: let
+        isPointer = lib.hasPrefix "npm:" version;
+        fragments = lib.splitString "@" (lib.removePrefix "npm:" version);
+        name' = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else name;
+        version' = if isPointer then lib.last fragments else version;
       in
-      { inherit name version; };
+      { name = name'; version = version'; };
+
+      parsePackageNameVersion = name': originalObj: parsePointer {
+        name = if builtins.hasAttr "name" originalObj then originalObj.name else name';
+        version = originalObj.version;
+      };
 
       # XXX: Creates a "node" for genericClosure. We include whether or not
       # the packages contains an integrity, and if so the integrity as well,
@@ -159,7 +164,7 @@ let
         originalName:
         originalObj:
         let
-          inherit (parsePackageNameVersion originalName originalObj.version) name version;
+          inherit (parsePackageNameVersion originalName originalObj) name version;
           obj = originalObj // {
             inherit name version;
           };
@@ -192,7 +197,7 @@ let
           # filter out the top-level package, which has an empty name
           (lib.filterAttrs (name: _: name != ""))
           (lib.mapAttrsToList (originalName: originalObj: let
-            inherit (parsePackageNameVersion (pathToName originalName) originalObj.version) name version;
+            inherit (parsePackageNameVersion (pathToName originalName) originalObj) name version;
             obj = originalObj // {
               inherit name version;
             };
@@ -555,6 +560,12 @@ in
 
   hello-world-deps-v3 = pkgs.runCommand "hello-world-deps-v3-test" { } ''
     ${buildPackage ./test/hello-world-deps-v3 {}}/bin/say-hello
+    touch $out
+  '';
+
+  # See https://github.com/nix-community/napalm/pull/58#issuecomment-1701202914
+  deps-alias = pkgs.runCommand "deps-alias" { } ''
+    ${buildPackage ./test/deps-alias {}}/bin/say-hello
     touch $out
   '';
 
