@@ -130,6 +130,8 @@ let
     let
       packageLock = builtins.fromJSON (builtins.readFile packageLockJson);
 
+      lockfileVersion = packageLock.lockfileVersion or 1;
+
       # Load custom name and version of the program in case it was specified and
       # not specified by the package-lock.json
       topPackageName =
@@ -139,6 +141,21 @@ let
         version = ifNotNull version fallbackPackageVersion;
       } // obj;
 
+      # Version can be a pointer like “npm:vue-loader@15.10.0”.
+      # In that case we need to replace the name and version with the target one.
+      parsePointer = { name, version }: let
+        isPointer = lib.hasPrefix "npm:" version;
+        fragments = lib.splitString "@" (lib.removePrefix "npm:" version);
+        name' = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else name;
+        version' = if isPointer then lib.last fragments else version;
+      in
+      { name = name'; version = version'; };
+
+      parsePackageNameVersion = name': originalObj: parsePointer {
+        name = if builtins.hasAttr "name" originalObj then originalObj.name else name';
+        version = originalObj.version;
+      };
+
       # XXX: Creates a "node" for genericClosure. We include whether or not
       # the packages contains an integrity, and if so the integrity as well,
       # in the key. The reason is that the same package and version pair can
@@ -147,12 +164,7 @@ let
         originalName:
         originalObj:
         let
-          # Version can be a pointer like “npm:vue-loader@15.10.0”.
-          # In that case we need to replace the name and version with the target one.
-          isPointer = lib.hasPrefix "npm:" originalObj.version;
-          fragments = lib.splitString "@" (lib.removePrefix "npm:" originalObj.version);
-          name = if isPointer then builtins.concatStringsSep "@" (lib.init fragments) else originalName;
-          version = if isPointer then lib.last fragments else originalObj.version;
+          inherit (parsePackageNameVersion originalName originalObj) name version;
           obj = originalObj // {
             inherit name version;
           };
@@ -165,10 +177,35 @@ let
 
       # The list of all packages discovered in the package-lock, excluding
       # the top-level package.
-      flattened = builtins.genericClosure {
-        startSet = [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
-        operator = x: x.next;
-      };
+      flattened = if lockfileVersion < 3
+        then builtins.genericClosure {
+          startSet = [ (mkNode topPackageName (updateTopPackageVersion packageLock)) ];
+          operator = x: x.next;
+        }
+        else let
+          # Parse a path like "node_modules/underscore" into a package name, like "underscore".
+          # Also has to support scoped package paths, like "node_modules/@babel/helper-string-parser" and
+          # nested packages, like "node_modules/@babel/helper-string-parser/node_modules/underscore".
+          pathToName = name: lib.pipe name [
+            (builtins.split "(@[^/]+/)?([^/]+)$")
+            (builtins.filter (x: builtins.isList x))
+            lib.flatten
+            (builtins.filter (x: x != null))
+            lib.concatStrings
+          ];
+        in lib.pipe (packageLock.packages or {}) [
+          # filter out the top-level package, which has an empty name
+          (lib.filterAttrs (name: _: name != ""))
+          (lib.mapAttrsToList (originalName: originalObj: let
+            inherit (parsePackageNameVersion (pathToName originalName) originalObj) name version;
+            obj = originalObj // {
+              inherit name version;
+            };
+          in {
+            inherit name obj version;
+            key = "${name}-${obj.version}-${obj.integrity or "no-integrity"}";
+          }))
+        ];
 
       # Create an entry for the snapshot, e.g.
       #     { some-package = { some-version = { url = ...; shaX = ...} ; }; }
@@ -518,6 +555,17 @@ in
 
   hello-world-deps = pkgs.runCommand "hello-world-deps-test" { } ''
     ${buildPackage ./test/hello-world-deps {}}/bin/say-hello
+    touch $out
+  '';
+
+  hello-world-deps-v3 = pkgs.runCommand "hello-world-deps-v3-test" { } ''
+    ${buildPackage ./test/hello-world-deps-v3 {}}/bin/say-hello
+    touch $out
+  '';
+
+  # See https://github.com/nix-community/napalm/pull/58#issuecomment-1701202914
+  deps-alias = pkgs.runCommand "deps-alias" { } ''
+    ${buildPackage ./test/deps-alias {}}/bin/say-hello
     touch $out
   '';
 
