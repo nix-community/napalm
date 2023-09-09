@@ -11,7 +11,7 @@
     "say-hello": "./cli.js"
   },
   "dependencies": {
-    "underscore": "^1.9.1"
+    "underscore": "^1.12.1"
   },
   "devDependencies": {},
   "description": ""
