@@ -24,6 +24,7 @@
               hello-world
               hello-world-deps
               hello-world-deps-v3
+              hello-world-workspace-v3
               deps-alias
               netlify-cli
               deckdeckgo-starter
