@@ -20,6 +20,7 @@ import Data.List
 import Data.Proxy
 import Data.String (IsString(..))
 import Data.Time (UTCTime(..), Day(ModifiedJulianDay))
+import Servant (err404, err500, errBody, throwError)
 import Servant.API
 import qualified Options.Applicative as Opts
 import qualified Codec.Archive.Tar as Tar
@@ -31,6 +32,7 @@ import qualified Data.Aeson.KeyMap as Aeson.KeyMap
 #endif
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Char8 as BL8
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.HashMap.Strict as HMS
 import qualified Data.Text as T
@@ -131,12 +133,12 @@ servePackageMetadata config port (unSnapshot -> ss) pn = do
     when (configVerbose config) $
       liftIO $ T.putStrLn $ "Requesting package info for " <> unScopedPackageNameFlat flatPn
     pvs <- maybe
-      (error $ "No such package: " <> T.unpack (unScopedPackageNameFlat flatPn))
+      (throwError (err404 {errBody = BL8.fromStrict $ BL8.pack $ "No such package: " <> T.unpack (unScopedPackageNameFlat flatPn)}))
       pure
       (HMS.lookup flatPn ss)
 
     pvs' <- forM (HMS.toList pvs)  $ \(pv, tarPath) ->
-      (pv,) <$> liftIO (mkPackageVersionMetadata config port pn pv tarPath)
+      (pv,) <$> mkPackageVersionMetadata config port pn pv tarPath
 
     pure $ mkPackageMetadata pn (HMS.fromList pvs')
 
@@ -174,11 +176,11 @@ servePackageVersionMetadata config port ss pn pv = do
         ]
 
     tarPath <- maybe
-      (error "No such tarball")
+      (throwError (err404 {errBody = "No such tarball"}))
       pure
       (getTarPath ss pn pv)
 
-    liftIO $ mkPackageVersionMetadata config port pn pv tarPath
+    mkPackageVersionMetadata config port pn pv tarPath
 
 getTarPath :: Snapshot -> ScopedPackageName -> PackageVersion -> Maybe FilePath
 getTarPath (unSnapshot -> ss) pn pv = do
@@ -201,7 +203,7 @@ serveTarball config ss pn tarName = do
         , unTarballName tarName
         ]
 
-    pv <- maybe (error "Could not parse version") pure $ do
+    pv <- maybe (throwError $ err500 { errBody = "Could not parse version"}) pure $ do
       let pn' = spnName pn -- the tarball filename does not contain scope
       let tn' = unTarballName tarName
       a <- T.stripPrefix (unPackageName pn' <> "-") tn'
@@ -209,7 +211,7 @@ serveTarball config ss pn tarName = do
       pure $ PackageVersion b
 
     tarPath <- maybe
-      (error "No such tarball")
+      (throwError (err404 {errBody = "No such tarball"}))
       pure
       (getTarPath ss pn pv)
     liftIO $ Tarball <$> BS.readFile tarPath
@@ -308,9 +310,9 @@ mkPackageVersionMetadata
   -> ScopedPackageName
   -> PackageVersion
   -> FilePath
-  -> IO PackageVersionMetadata
+  -> Servant.Handler PackageVersionMetadata
 mkPackageVersionMetadata config port pn pv tarPath = do
-    shasum <- sha1sum tarPath :: IO T.Text
+    shasum <- liftIO (sha1sum tarPath) :: Servant.Handler T.Text
 
     let
       tarName = toTarballName pn pv
@@ -345,12 +347,12 @@ mkTarballURL
   where
     tshow = T.pack . show
 
-readPackageJson :: FilePath -> IO Aeson.Object
+readPackageJson :: FilePath -> Servant.Handler Aeson.Object
 readPackageJson fp = do
-    tar <- GZip.decompress <$> BL.readFile fp
+    tar <- GZip.decompress <$> liftIO (BL.readFile fp)
 
     packageJsonRaw <- maybe
-      (error $ "Could not find package JSON for package " <> fp)
+      (throwError (err404 {errBody = BL8.fromStrict $ BL8.pack $ "Could not find package JSON for package " <> fp}))
       pure
       $ Tar.foldEntries
           (\e -> case Tar.entryContent e of
@@ -360,11 +362,9 @@ readPackageJson fp = do
           ) Nothing (const Nothing) (Tar.read tar)
 
     packageJson <- maybe
-      (error $ "Could not parse package JSON: " <>
-        (T.unpack $ T.decodeUtf8 $ BL.toStrict packageJsonRaw)
-      )
+      (throwError $ err500 { errBody = "Could not parse package JSON: " <> packageJsonRaw})
       pure
-      (Aeson.decode packageJsonRaw) :: IO Aeson.Object
+      (Aeson.decode packageJsonRaw) :: Servant.Handler Aeson.Object
 
     pure $ packageJson
 
