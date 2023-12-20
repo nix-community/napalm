@@ -1,6 +1,11 @@
 {}:
+
 let
-  sources = import ./sources.nix;
-  pkgs = import sources.nixpkgs { };
+  lock = builtins.fromJSON (builtins.readFile ../flake.lock);
+  nixpkgs = builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/${lock.nodes.nixpkgs.locked.rev}.tar.gz";
+    sha256 = lock.nodes.nixpkgs.locked.narHash;
+  };
+  pkgs = import nixpkgs { };
 in
-pkgs // { inherit sources; nodejs = pkgs.nodejs-10_x; }
+pkgs
