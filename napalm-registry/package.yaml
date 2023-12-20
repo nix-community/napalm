@@ -22,6 +22,7 @@ dependencies:
 ghc-options:
     - -Wall
     - -Werror
+    - -threaded
 
 executable:
     main: Main.hs
