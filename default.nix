@@ -196,6 +196,8 @@ let
         in lib.pipe (packageLock.packages or {}) [
           # filter out the top-level package, which has an empty name
           (lib.filterAttrs (name: _: name != ""))
+          # Filter out linked packages – they lack other attributes and the link target will be present separately.
+          (lib.filterAttrs (_name: originalObj: !(originalObj.link or false)))
           (lib.mapAttrsToList (originalName: originalObj: let
             inherit (parsePackageNameVersion (pathToName originalName) originalObj) name version;
             obj = originalObj // {
@@ -560,6 +562,11 @@ in
 
   hello-world-deps-v3 = pkgs.runCommand "hello-world-deps-v3-test" { } ''
     ${buildPackage ./test/hello-world-deps-v3 {}}/bin/say-hello
+    touch $out
+  '';
+
+  hello-world-workspace-v3 = pkgs.runCommand "hello-world-workspace-v3-test" { } ''
+    ${buildPackage ./test/hello-world-workspace-v3 {}}/_napalm-install/node_modules/.bin/say-hello
     touch $out
   '';
 

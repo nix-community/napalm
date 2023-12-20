@@ -1,0 +1,11 @@
+{
+  "name": "hello-world-workspace-v3-client",
+  "version": "1.0.0",
+  "license": "ISC",
+  "dependencies": {
+    "underscore": "^1.9.1"
+  },
+  "bin": {
+    "say-hello": "./cli.js"
+  }
+}
