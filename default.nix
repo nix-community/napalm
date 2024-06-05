@@ -435,7 +435,12 @@ let
 
             ${lib.optionalString (patchPackages || customPatchPackages != { }) ''
               echo "Patching npm packages integrity"
-              ${nodejs}/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
+              ${if
+                # If version of the node.js is below 14.13.0 there is no ESM
+                # module support by node.js
+                lib.versionAtLeast nodejs.version "14.13.0"
+                then nodejs else pkgs.nodejs
+               }/bin/node ${./scripts}/lock-patcher.mjs ${snapshot}
             ''}
 
             echo "Starting napalm registry"
