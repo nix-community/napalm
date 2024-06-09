@@ -1,6 +1,6 @@
 # Napalm
 
-**This project is looking for a new maintainer, [see](https://github.com/nix-community/napalm/issues/34)**
+**This project is looking for a new maintainer, [see](https://github.com/nix-community/napalm/issues/67)**
 
 > When faced with a JavaScript codebase, napalm is just what you need.
 >
